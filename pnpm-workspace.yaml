@@ -1,0 +1,8 @@
+allowBuilds:
+  # Native binary resolution for eslint-import-resolver-typescript, via eslint-plugin-import-x.
+  unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - '@mikode13/code-quality@1.0.0'
+  - '@mikode13/code-style@1.0.0'
+  - '@mikode13/git-hooks@1.0.0'

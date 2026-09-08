@@ -1,0 +1,72 @@
+# slop-lab
+
+A small React application that reads two public HTTP APIs: a current-weather lookup and a
+paginated Pokémon browser. It exists as teaching material, not as a product.
+
+## Why this repository exists
+
+The application code in `src/` is written the way a code generator writes code when nobody
+constrains it: HTTP calls inside components, hand-written response types that are never
+validated, duplicated request logic, no cancellation, and no tests. That starting point is
+deliberate.
+
+Each pull request then fixes one problem, and records what the change bought us in
+[docs/decisions.md](docs/decisions.md). The repository is therefore readable in two ways:
+as a working application at its current state, and as a sequence of reviewable refactors
+from generated code towards the MiKode engineering standards.
+
+The repository scaffold follows those standards from the first commit. The application code
+does not yet. Everything in `src/` passes formatting, linting, and type checking while
+remaining badly designed, which is the first thing the project demonstrates.
+
+## Current status
+
+Working: the weather panel, the Pokémon list with pagination, and the production build.
+
+Not yet adopted:
+
+- the [testing standard](https://github.com/Mikode13/engineering/blob/main/standards/testing.md);
+  the project has no test suite, no `test` script, and no Tests capability in CI. See
+  [docs/decisions.md](docs/decisions.md).
+
+## Requirements
+
+- Node.js `^22.13.0 || ^24.0.0` (`.nvmrc` pins the development version)
+- pnpm 11.17.0, which the `packageManager` field selects automatically
+
+## Getting started
+
+```sh
+pnpm install
+pnpm dev
+```
+
+The development server prints its local URL. Both APIs are public and need no credentials,
+so a network connection is the only external requirement.
+
+## Commands
+
+| Command             | Purpose                                           |
+| ------------------- | ------------------------------------------------- |
+| `pnpm dev`          | Start the Vite development server                 |
+| `pnpm build`        | Produce the production build in `dist/`           |
+| `pnpm preview`      | Serve the production build locally                |
+| `pnpm run check`    | Formatting, linting, and type checking            |
+| `pnpm run format`   | Rewrite files with Prettier                       |
+| `pnpm run lint:fix` | Apply the ESLint fixes that can be applied safely |
+
+`pnpm run check` is what CI runs and what the `pre-push` hook runs.
+
+## External APIs
+
+- [Open-Meteo](https://open-meteo.com/en/docs) for current weather and its geocoding search.
+- [PokéAPI](https://pokeapi.co/docs/v2) for the paginated list and the per-entry details.
+
+Neither service is affiliated with this project. Both are used within their documented
+public rate limits.
+
+## License
+
+Source-available under the MIT License with the Commons Clause License Condition v1.0. The
+Commons Clause removes the right to sell the software. See [LICENSE](LICENSE) for the
+complete terms.

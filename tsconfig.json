@@ -1,0 +1,7 @@
+{
+	"extends": "@mikode13/tsconfig/react",
+	"compilerOptions": {
+		"types": ["vite/client"]
+	},
+	"include": ["src"]
+}
