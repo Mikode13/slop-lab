@@ -15,6 +15,9 @@ Each pull request then fixes one problem, and records what the change bought us 
 as a working application at its current state, and as a sequence of reviewable refactors
 from generated code towards the MiKode engineering standards.
 
+[The architecture document](docs/architecture.md) describes both the deliberately flat
+current implementation and the explicit boundaries the teaching sequence will introduce.
+
 The repository scaffold follows those standards from the first commit. The application code
 does not yet. Everything in `src/` passes formatting, linting, and type checking while
 remaining badly designed, which is the first thing the project demonstrates.
