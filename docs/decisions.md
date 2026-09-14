@@ -50,3 +50,29 @@ neither is hidden behind a command that always succeeds.
 
 **Lesson.** A standard that forbids placeholders converts "we have no tests" from an
 invisible property of the repository into a decision somebody has to write down.
+
+## Evolve towards domain, application, infrastructure, and UI boundaries
+
+**Decision.** The teaching sequence will evolve the application towards four explicit
+boundaries: domain, application, infrastructure, and UI. UI will invoke application use
+cases, application will coordinate domain concepts through project-owned ports, and
+infrastructure will implement those ports for external providers. A small composition root
+will connect concrete adapters to the application.
+
+**Context.** The starting implementation deliberately combines rendering, use-case
+orchestration, HTTP requests, remote response types, and presentation mapping inside React
+components. The repository needs an architectural direction against which focused refactors
+can be reviewed without pretending that the direction already exists.
+
+Direct communication between domain and React would make the domain depend on a delivery
+mechanism. The application boundary instead gives UI a way to obtain domain results while
+keeping React, Axios, and provider details outside the domain.
+
+**Consequences.** Each boundary is introduced only when a dedicated pull request can show
+the problem it solves. Infrastructure depends on application-owned ports rather than owning
+the use-case contracts. Domain remains independent of React and Axios. Until the relevant
+refactors land, the architecture document identifies the flat design and its coupling as
+current, intentional teaching material rather than describing the target as complete.
+
+**Lesson.** An architectural direction can guide incremental work without falsifying the
+current state, provided that current and intended structures remain explicit.
