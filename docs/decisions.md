@@ -76,3 +76,61 @@ current, intentional teaching material rather than describing the target as comp
 
 **Lesson.** An architectural direction can guide incremental work without falsifying the
 current state, provided that current and intended structures remain explicit.
+
+## Pilot automated review locally before centralizing it
+
+**Decision.** slop-lab will temporarily own the first executable AI review workflow. After
+controlled pull requests prove its outcome contract and failure behavior, the implementation
+will move to `Mikode13/.github` and this repository will retain only an immutable thin
+caller.
+
+**Context.** The active MiKode policy calls for a central reusable reviewer followed by
+consumer pilots. No executable reviewer exists yet, so that sequence would make the first
+central implementation depend on untested assumptions about provider execution, structured
+output, and GitHub publication. slop-lab already exists as the public integration canary and
+contains known defects that test whether review can distinguish pre-existing debt from a
+problem introduced by a pull request.
+
+**Consequences.** The local workflow is an explicit, temporary deviation from the normal
+central-workflow boundary. Deterministic `CI / required` remains untouched. The provider
+credential stays in a read-only analysis job and publication happens separately, with the
+publishing job re-deriving the whole result contract before it acts on what analysis handed
+it. A result that cannot be validated, is bound to another commit, or never arrived is
+`incomplete` and fails the check; a completed review that found a blocking problem passes the
+check and blocks the merge through unresolved conversations instead. Promotion must preserve
+that behavior, add the reusable contract and fixtures the central repository requires, and
+delete the local implementation rather than let two reviewers drift.
+
+**Lesson.** A central workflow is cheaper to trust when its provider and publication
+boundaries have first been exercised by the canary that will consume it.
+
+## Give the automated reviewer evidence instead of a workspace
+
+**Decision.** The workflow collects the diff, the reviewed files, the intent sources, the
+trusted base context, and the applicable standards, and sends them to the reviewer as one
+prompt. The reviewer reads no repository, runs no command, and explores nothing.
+
+**Context.** The pilot runs the review through `harness-cli`, which passes its prompt as a
+single command argument, leaves a non-interactive run with nobody to approve a tool permission,
+and caps a Claude turn at three turns. A reviewer that tried to explore would stall on its
+first permission request until the deadline, and a stalled run is indistinguishable from a
+thorough one until it fails. Collecting the evidence in the job also keeps the reviewer's
+inputs read from a trusted revision rather than from the branch under review.
+
+**Consequences.** Linux caps a single argument at 128 KiB, which makes the prompt budget a
+real limit rather than a precaution. Sections are added whole in priority order and never
+truncated, and whatever does not fit is declared to the reviewer and republished in the
+summary, so missing context reduces coverage instead of quietly producing a clean review. When
+the trusted instructions or the reviewed files are what got displaced, the run is abandoned as
+`incomplete` before the provider is called, because paying for a review of a diff with no
+surrounding code buys nothing. Measured against the pinned skill and the current standards, the
+three-file documentation change in pull request 1 fits at 113 KiB, and the eight-file bootstrap
+in pull request 2 does not: it displaces the reviewed files, all three specialist guides, the
+architecture document, the decision log, and two standards, because it needs 249 KiB against a
+128 KiB ceiling. Until `harness-cli` accepts a prompt from a file or stdin,
+[harness-cli#7](https://github.com/Mikode13/harness-cli/issues/7), the pilot can only measure
+small changes.
+
+**Lesson.** Measure the transport before planning around it. The argument limit was expected to
+matter for unusually large pull requests; it turned out to bind on the smallest real one and to
+exclude an ordinary one.

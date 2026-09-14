@@ -60,6 +60,11 @@ so a network connection is the only external requirement.
 
 `pnpm run check` is what CI runs and what the `pre-push` hook runs.
 
+The repository also hosts a temporary
+[AI review pilot](docs/ai-review-pilot.md). It is evaluated separately from deterministic
+CI and will become a thin caller after the workflow is proven and promoted to
+`Mikode13/.github`.
+
 ## External APIs
 
 - [Open-Meteo](https://open-meteo.com/en/docs) for current weather and its geocoding search.
