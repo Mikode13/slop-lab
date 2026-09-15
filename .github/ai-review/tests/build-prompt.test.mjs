@@ -104,6 +104,23 @@ test('a changed lockfile is reviewed through its diff and never counts as an ove
 	assert.match(prompt, /intentionally not supplied: pnpm-lock\.yaml/u);
 });
 
+test('the code review is supplied with the philosophy it reviews against', () => {
+	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
+	write(
+		join(directories.skill, 'skills/mikode-code-philosophy-review/SKILL.md'),
+		'Code review method.\n',
+	);
+	write(join(directories.skill, 'skills/mikode-code-philosophy/SKILL.md'), 'Code criteria.\n');
+	build(directories);
+	const prompt = readFileSync(join(directories.work, 'prompt.txt'), 'utf8');
+
+	assert.match(prompt, /===== Code review guidance \(pinned\) =====\nCode review method\./u);
+	assert.match(
+		prompt,
+		/===== Code philosophy the code review applies \(pinned\) =====\nCode criteria\./u,
+	);
+});
+
 test('a budget spent by the mandatory sections never produces a build that fits', () => {
 	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
 	const mandatoryOnly = build(directories, { PROMPT_LIMIT: '1' }).bytes;

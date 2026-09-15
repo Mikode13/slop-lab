@@ -67,6 +67,13 @@ truncated. What did not fit is declared to the reviewer as a missing source and 
 the summary under "Context not supplied to the reviewer", which the contract expects it to turn
 into reduced coverage rather than a silent pass.
 
+From the pinned skills revision, the prompt carries `mikode-review` and its contract, the three
+specialist skills it coordinates, and `mikode-code-philosophy`, whose criteria the code
+specialist applies. MiKode policy reaches the reviewer as the Active standards above, in place
+of `mikode-context`, which the review skill accepts. The skills' validation cases and the
+specialists' calibration examples are left out, because the skills reserve them for
+validating the skills rather than for ordinary reviews.
+
 Dropping the trusted `AGENTS.md` or the reviewed files leaves nothing worth reviewing, and so
 does supplying a reviewed file only in part, so a reviewed file over 40,000 bytes counts as
 missing too. Either way the run is abandoned as `incomplete` before the provider is called
