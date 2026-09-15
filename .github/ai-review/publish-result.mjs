@@ -238,11 +238,17 @@ if (unanchored.length > 0) {
 		.join('\n')}`;
 }
 
+// Each execution decides the check from its own result, never from a review already on the pull
+// request: any workflow allowed to write reviews could have posted one, and an earlier
+// incomplete review must not stop a retry from publishing its conversations. Only a repeated
+// delivery of this same report, such as a re-run of this job alone, is left unpublished.
 const reviews = await request(`${pullPath}/reviews?per_page=100`);
-const alreadyPublished = reviews.some(review => (review.body ?? '').includes(marker));
+const alreadyPublished = reviews.some(
+	review => review.user?.login === 'github-actions[bot]' && review.body === body,
+);
 
 if (alreadyPublished) {
-	console.log(`A review for ${headSha} is already published; not publishing a second one.`);
+	console.log(`This report for ${headSha} is already published; not publishing it again.`);
 } else {
 	await request(`${pullPath}/reviews`, {
 		method: 'POST',

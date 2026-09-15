@@ -131,6 +131,13 @@ not succeed all produce `incomplete`. A blocking finding that cannot be anchored
 in the diff also fails the check, because a conversation nobody has to resolve would leave the
 outcome unenforced.
 
+Each execution decides the status from its own result, never from a review already on the pull
+request. Any workflow allowed to write reviews could have posted one, and an earlier
+`incomplete` review must not stop a retry from publishing its conversations. So a retry after
+an `incomplete` review publishes its own review, and only a repeated delivery of the same
+report is left unpublished. To retry, use "Re-run all jobs": re-running only the failed jobs
+repeats the publication of the same report without a new review.
+
 ## Enforcement
 
 During the pilot, `AI Review / required` is reported but not required. Requiring it needs a
@@ -239,6 +246,7 @@ without spending quota or waiting on a real run.
 | Instructions rewritten by the pull request     | No effect on the reviewer; ordinary result  |
 | New commit while the review runs               | Previous result superseded and discarded    |
 | Duplicate delivery for one commit              | One review per commit                       |
+| Re-run after an `incomplete` review            | New result published; it sets the status    |
 | Truncated or invalid reply                     | One repair attempt, then `incomplete`       |
 | Provider failure or exhausted quota            | `incomplete`                                |
 | Passing test that does not prove the behaviour | `blocked`                                   |
