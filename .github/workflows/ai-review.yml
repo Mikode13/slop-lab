@@ -1,0 +1,273 @@
+name: AI Review
+
+# pull_request_target runs this file as it is on main, never as the pull request defines it, and
+# only a run from main can read the ai-review environment that holds the provider token. Nothing
+# here executes code or configuration from the pull request: its head is read as data.
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+
+permissions: {}
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # The pilot is frozen on these revisions so that a result can be attributed to a reviewer,
+  # not to whatever the ecosystem published that morning.
+  HARNESS_PACKAGE: '@mikode13/harness-cli@1.1.0'
+  SKILL_REVISION: 6015886996d5fbadc21aa49353f7e476ae1737be
+  REVIEW_MODEL: opus
+  REVIEW_EFFORT: high
+  REVIEW_TIMEOUT_SECONDS: '600'
+
+jobs:
+  # Reads the change and spends the provider credential. It has no write access anywhere, and
+  # it never executes the pull request: the reviewer receives evidence, not a workspace.
+  analyze:
+    name: Analyze
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: ai-review
+    permissions:
+      checks: read
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      report: ${{ steps.review.outputs.report || steps.missing.outputs.report }}
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Wait for deterministic CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in $(seq 1 60); do
+            conclusion="$(gh api "repos/${REPOSITORY}/commits/${HEAD_SHA}/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.name == "CI / required")] | sort_by(.started_at) | last | .conclusion // ""')"
+
+            if [ "$conclusion" = "success" ]; then
+              exit 0
+            fi
+
+            case "$conclusion" in
+              action_required | cancelled | failure | neutral | skipped | stale | timed_out)
+                echo "CI / required finished as ${conclusion}; there is nothing worth reviewing yet."
+                exit 1
+                ;;
+            esac
+
+            echo "Waiting for CI / required (attempt ${attempt} of 60)."
+            sleep 10
+          done
+
+          echo "CI / required did not finish within ten minutes."
+          exit 1
+
+      # The runner context is not available to a job-level `env`, so the directories the later
+      # steps and the Node scripts share are exported here instead.
+      - name: Prepare the review workspace
+        run: |
+          {
+            echo "BASE_DIR=${RUNNER_TEMP}/base"
+            echo "EVIDENCE_DIR=${RUNNER_TEMP}/evidence"
+            echo "HEAD_DIR=${GITHUB_WORKSPACE}/head"
+            echo "OUTPUT_DIR=${RUNNER_TEMP}/work"
+            echo "POLICY_DIR=${RUNNER_TEMP}/policy"
+            echo "SKILL_DIR=${RUNNER_TEMP}/skill"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p "${RUNNER_TEMP}/base" "${RUNNER_TEMP}/evidence" "${RUNNER_TEMP}/work" \
+            "${RUNNER_TEMP}/policy" "${RUNNER_TEMP}/skill"
+
+      - name: Check out the reviewed commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.0
+        with:
+          fetch-depth: 0
+          path: head
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Extract the trusted base revision
+        working-directory: head
+        run: git archive "$BASE_SHA" | tar -x -C "$BASE_DIR"
+
+      - name: Collect the reviewed change
+        working-directory: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git diff --no-ext-diff --unified=3 "${BASE_SHA}...${HEAD_SHA}" > "${EVIDENCE_DIR}/change.diff"
+          git diff --name-only "${BASE_SHA}...${HEAD_SHA}" > "${EVIDENCE_DIR}/changed-files.txt"
+
+          gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" > "${EVIDENCE_DIR}/pull-request.json"
+
+          # The change contract comes from the issue the pull request closes. An issue merely
+          # mentioned in the description is not that contract, so only a closing reference counts.
+          gh api graphql \
+            -f owner="${GITHUB_REPOSITORY_OWNER}" \
+            -f name="${REPOSITORY#*/}" \
+            -F number="${PR_NUMBER}" \
+            -f query='
+              query($owner: String!, $name: String!, $number: Int!) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $number) {
+                    closingIssuesReferences(first: 1) {
+                      nodes { url body }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[0] | select(. != null) | {html_url: .url, body: .body}' \
+            > "${EVIDENCE_DIR}/issue.json"
+
+          if [ ! -s "${EVIDENCE_DIR}/issue.json" ]; then
+            rm -f "${EVIDENCE_DIR}/issue.json"
+            echo "This pull request closes no issue; the reviewer must resolve intent from its description."
+          fi
+
+      - name: Install the pinned review skill and current policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error --location \
+            "https://codeload.github.com/Mikode13/skills/tar.gz/${SKILL_REVISION}" \
+            | tar -xz --strip-components=1 -C "$SKILL_DIR"
+
+          policy_revision="$(gh api repos/Mikode13/engineering/commits/main --jq .sha)"
+          echo "POLICY_REVISION=${policy_revision}" >> "$GITHUB_ENV"
+
+          for standard in automated-pull-request-review documentation git-workflow; do
+            gh api "repos/Mikode13/engineering/contents/standards/${standard}.md?ref=${policy_revision}" \
+              --header 'Accept: application/vnd.github.raw+json' > "${POLICY_DIR}/${standard}.md"
+          done
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.0.0
+        with:
+          node-version: 24
+
+      # The reviewer's own code is read from the base revision, never from the pull request, so
+      # a change cannot rewrite the reviewer that is about to judge it.
+      - name: Confirm the trusted reviewer
+        id: trusted
+        run: |
+          if [ -f "${BASE_DIR}/.github/ai-review/run-reviewer.mjs" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo "The base revision carries no pilot reviewer, so this change cannot be reviewed by it."
+          fi
+
+      - name: Build the review prompt
+        if: steps.trusted.outputs.present == 'true'
+        run: node "${BASE_DIR}/.github/ai-review/build-prompt.mjs"
+
+      - name: Review the pull request
+        id: review
+        if: steps.trusted.outputs.present == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: node "${BASE_DIR}/.github/ai-review/run-reviewer.mjs"
+
+      - name: Report the missing reviewer
+        id: missing
+        if: steps.trusted.outputs.present != 'true'
+        run: |
+          delimiter="report-${RANDOM}${RANDOM}"
+          {
+            printf 'report<<%s\n' "$delimiter"
+            printf '{"valid":false,"outcome":"incomplete","errors":["The base revision %s carries no pilot reviewer, so this change could not be reviewed against a trusted one."]}\n' "$BASE_SHA"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+  # Holds the write access and no provider credential. It re-validates the analysis before it
+  # acts on it and reports the outcome as the AI Review / required status of the reviewed commit.
+  publish:
+    name: Publish
+    needs:
+      - analyze
+    # A draft gets no status and cannot merge; marking it ready starts a new review. Anything else
+    # that cannot be reviewed reports a failing status instead of none.
+    if: always() && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
+    steps:
+      - name: Refuse a pull request from a fork
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "A pull request from a fork receives no provider credential, so it cannot be reviewed during the pilot."
+          exit 1
+
+      - name: Check out the trusted publisher
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/ai-review
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.0.0
+        with:
+          node-version: 24
+
+      - name: Publish the review
+        id: publish
+        env:
+          ANALYZE_RESULT: ${{ needs.analyze.result }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPORT: ${{ needs.analyze.outputs.report }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ ! -f .github/ai-review/publish-result.mjs ]; then
+            echo "The base revision carries no publisher, so no review can be published for this change."
+            exit 1
+          fi
+          node .github/ai-review/publish-result.mjs
+
+      # Under pull_request_target, GITHUB_SHA is the latest commit of main rather than the reviewed
+      # commit, so the outcome is reported on the reviewed commit explicitly.
+      - name: Report the review status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OUTCOME: ${{ steps.publish.outputs.outcome }}
+          PUBLISHED: ${{ steps.publish.outcome }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$PUBLISHED" = success ]; then
+            state=success
+            description="Review completed: ${OUTCOME}."
+          else
+            state=failure
+            description="No completed review for this commit${OUTCOME:+ (${OUTCOME})}."
+          fi
+
+          gh api "repos/${REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context='AI Review / required' \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            > /dev/null
