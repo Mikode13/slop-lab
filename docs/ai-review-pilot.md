@@ -36,11 +36,10 @@ Analysis starts only after `CI / required` succeeds for the same head commit.
 
 The work is split across jobs that do not share credentials:
 
-| Job                    | Credentials                              | Responsibility                                             |
-| ---------------------- | ---------------------------------------- | ---------------------------------------------------------- |
-| `Analyze`              | Provider token, read-only GitHub token   | Collect evidence, run the reviewer, validate the result    |
-| `AI Review / required` | GitHub token with `pull-requests: write` | Revalidate, publish the review, report the check           |
-| `Reviewer tests`       | Read-only GitHub token                   | Test the reviewer scripts as the pull request changes them |
+| Job                    | Credentials                              | Responsibility                                          |
+| ---------------------- | ---------------------------------------- | ------------------------------------------------------- |
+| `Analyze`              | Provider token, read-only GitHub token   | Collect evidence, run the reviewer, validate the result |
+| `AI Review / required` | GitHub token with `pull-requests: write` | Revalidate, publish the review, report the check        |
 
 `Analyze` checks out the pull request head without persisted Git credentials and never runs
 anything from it. The reviewer's own scripts, the repository instructions, the architecture
@@ -214,8 +213,8 @@ without spending quota or waiting on a real run.
 | Passing test that does not prove the behaviour | `blocked`                                   |
 
 The rules that decide merge authority without the provider also have focused tests in
-[`.github/ai-review/tests`](../.github/ai-review/tests), run by the `Reviewer tests` job and
-locally with `pnpm run test:ai-review`. They use the Node.js test runner rather than Vitest,
+[`.github/ai-review/tests`](../.github/ai-review/tests). `pnpm run check` runs them through
+`pnpm run test:ai-review`, so `CI / required` fails when one of them does. They use the Node.js test runner rather than Vitest,
 because they test temporary pilot tooling and must not stand in for the test suite that
 `src/` still lacks by design.
 
