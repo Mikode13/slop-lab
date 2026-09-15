@@ -29,7 +29,7 @@ const workDirectory = environment('OUTPUT_DIR');
 
 const harnessPackage = process.env.HARNESS_PACKAGE ?? '@mikode13/harness-cli@1.1.0';
 const reviewerCommand = process.env.REVIEWER_COMMAND ?? 'npx';
-const model = process.env.REVIEW_MODEL ?? 'sonnet';
+const model = process.env.REVIEW_MODEL ?? 'opus';
 const effort = process.env.REVIEW_EFFORT ?? 'high';
 const timeoutMs = Number(process.env.REVIEW_TIMEOUT_SECONDS ?? 600) * 1000;
 

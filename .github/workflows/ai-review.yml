@@ -21,7 +21,7 @@ env:
   # not to whatever the ecosystem published that morning.
   HARNESS_PACKAGE: '@mikode13/harness-cli@1.1.0'
   SKILL_REVISION: 6015886996d5fbadc21aa49353f7e476ae1737be
-  REVIEW_MODEL: sonnet
+  REVIEW_MODEL: opus
   REVIEW_EFFORT: high
   REVIEW_TIMEOUT_SECONDS: '600'
 

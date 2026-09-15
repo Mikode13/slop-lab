@@ -16,7 +16,7 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 | Reviewer command | `@mikode13/harness-cli@1.1.0`, with the prompt passed through `--prompt-file`                 |
 | Review skill     | `mikode-review` from `Mikode13/skills` at `6015886`, the `v0.3.0` tag                         |
 | Provider         | Claude, on a MiKode-owned account, through `CLAUDE_CODE_OAUTH_TOKEN`                          |
-| Model and effort | `sonnet` at `high` reasoning effort                                                           |
+| Model and effort | `opus` at `high` reasoning effort                                                             |
 | Provider timeout | 10 minutes per turn, enforced by the runner                                                   |
 | Repair attempts  | At most one additional turn to recover a reply that failed contract validation                |
 | Evidence budget  | 1,250,000 bytes of prompt, about 500,000 tokens, filled in priority order and never truncated |
@@ -87,7 +87,7 @@ costs nothing, because only the files a pull request changes are supplied.
 The prompt reaches `harness-cli` as a file through `--prompt-file`, so the model sets its size
 rather than the command line. The 1,250,000-byte budget is about 500,000 tokens at the roughly
 2.5 characters per token that Anthropic documents for the current tokenizer. That is half of
-Sonnet 5's 1M-token window: it leaves room for the agent's own prompt and the reply, and it
+Opus 5's 1M-token window: it leaves room for the agent's own prompt and the reply, and it
 stays below the length at which a long context starts to degrade the review. Every run records
 its input tokens in the review report, so the first real runs can confirm the ratio.
 

@@ -35,7 +35,7 @@ const policyRevision = environment('POLICY_REVISION');
 const outputDirectory = environment('OUTPUT_DIR');
 
 // About 500,000 tokens at the roughly 2.5 characters per token that Anthropic documents for the
-// current tokenizer: half of Sonnet 5's 1M-token window, which leaves room for the agent's own
+// current tokenizer: half of Opus 5's 1M-token window, which leaves room for the agent's own
 // prompt and the reply and stays below the length at which a long context degrades the review.
 // Every run reports its input tokens, so the first real runs can confirm the ratio.
 const promptLimit = Number(process.env.PROMPT_LIMIT ?? 1_250_000);

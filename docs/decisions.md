@@ -130,7 +130,7 @@ in pull request 2 needed about 250 KiB: it would have displaced the reviewed fil
 specialist guides, the architecture document, the decision log, and two standards. Instead of
 shrinking the evidence to fit, `harness-cli` 1.1.0 added `--prompt-file`
 ([harness-cli#7](https://github.com/Mikode13/harness-cli/issues/7)) and the pilot adopted it
-before merging. The budget is now 1,250,000 bytes, about 500,000 tokens: half of Sonnet 5's
+before merging. The budget is now 1,250,000 bytes, about 500,000 tokens: half of Opus 5's
 1M-token window, below the length at which a long context degrades the review, and enough for
 the bootstrap to fit whole.
 
