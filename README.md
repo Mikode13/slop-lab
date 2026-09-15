@@ -29,7 +29,7 @@ Working: the weather panel, the Pokémon list with pagination, and the productio
 Not yet adopted:
 
 - the [testing standard](https://github.com/Mikode13/engineering/blob/main/standards/testing.md);
-  the project has no test suite, no `test` script, and no Tests capability in CI. See
+  the application has no test suite, no `test` script, and no Tests capability in CI. See
   [docs/decisions.md](docs/decisions.md).
 
 ## Requirements
@@ -49,16 +49,18 @@ so a network connection is the only external requirement.
 
 ## Commands
 
-| Command             | Purpose                                           |
-| ------------------- | ------------------------------------------------- |
-| `pnpm dev`          | Start the Vite development server                 |
-| `pnpm build`        | Produce the production build in `dist/`           |
-| `pnpm preview`      | Serve the production build locally                |
-| `pnpm run check`    | Formatting, linting, and type checking            |
-| `pnpm run format`   | Rewrite files with Prettier                       |
-| `pnpm run lint:fix` | Apply the ESLint fixes that can be applied safely |
+| Command                   | Purpose                                                             |
+| ------------------------- | ------------------------------------------------------------------- |
+| `pnpm dev`                | Start the Vite development server                                   |
+| `pnpm build`              | Produce the production build in `dist/`                             |
+| `pnpm preview`            | Serve the production build locally                                  |
+| `pnpm run check`          | Formatting, linting, type checking, and the AI review pilot's tests |
+| `pnpm run test:ai-review` | Only the AI review pilot's tests                                    |
+| `pnpm run format`         | Rewrite files with Prettier                                         |
+| `pnpm run lint:fix`       | Apply the ESLint fixes that can be applied safely                   |
 
-`pnpm run check` is what CI runs and what the `pre-push` hook runs.
+`pnpm run check` is what CI runs and what the `pre-push` hook runs. The AI review pilot's
+tests cover its temporary tooling, not the application.
 
 The repository also hosts a temporary
 [AI review pilot](docs/ai-review-pilot.md). It is evaluated separately from deterministic
