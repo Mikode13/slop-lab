@@ -214,9 +214,9 @@ without spending quota or waiting on a real run.
 
 The rules that decide merge authority without the provider also have focused tests in
 [`.github/ai-review/tests`](../.github/ai-review/tests). `pnpm run check` runs them through
-`pnpm run test:ai-review`, so `CI / required` fails when one of them does. They use the Node.js test runner rather than Vitest,
-because they test temporary pilot tooling and must not stand in for the test suite that
-`src/` still lacks by design.
+`pnpm run test:ai-review`, so `CI / required` fails when one of them does. They use the
+Node.js test runner rather than Vitest, because they test temporary pilot tooling and must not
+stand in for the test suite that `src/` still lacks by design.
 
 [Mikode13/engineering#28](https://github.com/Mikode13/engineering/issues/28) also asks for
 fixed passes to be compared against risk-routed depth on the same cases. `REVIEW_MODEL` and
