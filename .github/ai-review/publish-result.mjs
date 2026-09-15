@@ -262,4 +262,6 @@ if (unenforceable) {
 }
 
 console.log(`Outcome: ${report.outcome}.`);
+if (process.env.GITHUB_OUTPUT)
+	appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${report.outcome}\n`);
 process.exit(report.outcome === 'incomplete' || unenforceable ? 1 : 0);

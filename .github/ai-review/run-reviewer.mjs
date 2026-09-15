@@ -51,7 +51,9 @@ function runTurn(promptPath) {
 		const child = spawn(
 			reviewerCommand,
 			[...args, '--model', model, '--reasoning-effort', effort, '--prompt-file', promptPath],
-			{ stdio: ['ignore', 'pipe', 'pipe'], shell: false },
+			// The agent starts in the work directory, never in the workspace that holds the pull
+			// request checkout, so no configuration from the head can apply to it.
+			{ cwd: workDirectory, stdio: ['ignore', 'pipe', 'pipe'], shell: false },
 		);
 
 		let stdout = '';

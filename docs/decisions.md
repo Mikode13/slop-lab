@@ -143,8 +143,8 @@ around it would have shaped every later review.
 
 **Decision.** `AI Review / required` fails for every pull request that could merge without a
 review: when the base revision carries no reviewer, when the pull request comes from a fork,
-and when analysis did not succeed. Only a draft skips. The check is required through a ruleset
-of its own, and only after it has reported successfully once.
+and when analysis did not succeed. Only a draft gets no result. The review is required only
+through a ruleset of its own.
 
 **Context.** GitHub reports a job skipped by its condition as successful, and a skipped
 required check does not block a merge. The first version of the workflow skipped fork pull
@@ -152,11 +152,11 @@ requests on the assumption that the check would then never report; it would have
 success instead. The bootstrap pull request raised the opposite question, whether a check
 that cannot run yet should skip rather than fail.
 
-**Consequences.** The bootstrap pull request merges with a failing, not yet required,
-`AI Review / required`, and the check becomes required only afterwards, in a ruleset that
-targets this repository alone, because the shared `required-ci` ruleset would make every other
-repository wait for a check nothing reports. Removing the reviewer from `main` blocks later
-pull requests instead of silently disabling the gate. An exceptional merge past an
+**Consequences.** The bootstrap pull request merges without a review, because its base
+carries no reviewer, and the review becomes required only afterwards, in a ruleset of its own,
+because the shared `required-ci` ruleset would make every other repository wait for a review
+that never comes. Removing the reviewer from `main` fails later reviews instead of silently
+passing them. An exceptional merge past an
 `incomplete` review goes through a pull-request-only bypass, which the standard allows with a
 recorded reason, instead of an edit to the ruleset.
 
@@ -165,26 +165,27 @@ so every path that cannot produce a review has to fail.
 
 ## Put the token and the check out of a branch's reach before the gate is required
 
-**Decision.** `AI Review / required` stays unrequired until neither the provider token nor the
-check can be reached by the pull request under review. The token moves into an environment
-limited to `main`, the review runs in the default branch's context, and the check comes from
-a source a branch cannot act as. Until then the pilot runs only on branches pushed by trusted
-maintainers and their agents, with the risk accepted explicitly on the bootstrap pull request.
+**Decision.** The review runs through `pull_request_target`, from `main`, and the provider
+token lives in an `ai-review` environment that only a run from `main` can read. The check stays
+unrequired until promotion, when a ruleset requires the central workflow at a pinned commit.
+No GitHub App is created for the pilot. Until promotion the pilot runs only on branches pushed
+by trusted maintainers and their agents, with the remaining risk accepted explicitly on the
+bootstrap pull request.
 
 **Context.** Under `pull_request`, GitHub runs every workflow as the pull request branch
 defines it, including workflows the branch adds, and gives a branch of the same repository its
 secrets. Reading the reviewer's scripts from the base revision protects the reviewer, not the
-token, which any branch workflow can read, and not the check, which any branch workflow can
+token, which any branch workflow could read, and not the check, which any branch workflow can
 report under the same name. Branches here are pushed by implementing agents as well as by the
 maintainer.
 
-**Consequences.** The pilot can run before the gate is required, but the gate cannot be
-required, and the implementation cannot be promoted, until both are closed. The check has to
-come from a ruleset rule that requires a pinned workflow, if the plan offers it, or from a
-MiKode GitHub App that the ruleset names as its source. A push ruleset that blocked workflow
-changes is not available, because GitHub offers push rulesets only to private and internal
-repositories.
+**Consequences.** The token is out of a branch's reach from the start. The check is not until
+promotion: a ruleset cannot require a workflow in the repository that holds it, a push ruleset
+that blocked workflow changes is available only to private and internal repositories, and a
+GitHub App would have to be removed again once the central workflow is required. The pilot
+therefore measures the review with its status reported but not required.
 
 **Lesson.** Trusting the code a workflow runs is not the same as trusting the workflow, and
 trusting the workflow is not the same as trusting every workflow a branch can add. The boundary
-has to include the secret and the name of the check.
+has to include the secret and the name of the check, and the cheapest way to close each part
+can differ.

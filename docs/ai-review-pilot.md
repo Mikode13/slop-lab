@@ -22,34 +22,41 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 | Evidence budget  | 1,250,000 bytes of prompt, about 500,000 tokens, filled in priority order and never truncated |
 | Cost ceiling     | The EUR 30 per month the standard allows for the whole provider account                       |
 
-The standard's provider section still describes Claude Code GitHub Actions. That paragraph is
-mutable by a reviewed standard update, and it must be updated to describe `harness-cli` before
-this pilot is declared blocking. ADR 0017 needs no change: it is deliberately agnostic about
-provider and runtime.
+The standard's provider section still describes Claude Code GitHub Actions.
+[Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41) updates it to
+describe `harness-cli`, together with the enforcement rules this pilot settled. ADR 0017 needs
+no change: it is deliberately agnostic about provider and runtime.
 
 ## What runs
 
 The pilot runs for an internal, non-draft pull request targeting `main` when the pull request
-is opened, reopened, marked ready, or receives a new commit. A per-pull-request concurrency
-group cancels superseded executions, so a new commit discards the result of the previous one.
-Analysis starts only after `CI / required` succeeds for the same head commit.
+is opened, reopened, marked ready, or receives a new commit. It is triggered by
+`pull_request_target`, so GitHub runs the workflow as it is on `main`, never as the pull
+request defines it, and only such a run can read the `ai-review` environment that holds the
+provider token. A per-pull-request concurrency group cancels superseded executions, so a new
+commit discards the result of the previous one. Analysis starts only after `CI / required`
+succeeds for the same head commit.
 
 The work is split across jobs that do not share credentials:
 
-| Job                    | Credentials                              | Responsibility                                          |
-| ---------------------- | ---------------------------------------- | ------------------------------------------------------- |
-| `Analyze`              | Provider token, read-only GitHub token   | Collect evidence, run the reviewer, validate the result |
-| `AI Review / required` | GitHub token with `pull-requests: write` | Revalidate, publish the review, report the check        |
+| Job       | Credentials                                                    | Responsibility                                          |
+| --------- | -------------------------------------------------------------- | ------------------------------------------------------- |
+| `Analyze` | Provider token from `ai-review`, read-only GitHub token        | Collect evidence, run the reviewer, validate the result |
+| `Publish` | GitHub token with `pull-requests: write` and `statuses: write` | Revalidate, publish the review, report the status       |
 
-`Analyze` checks out the pull request head without persisted Git credentials and never runs
-anything from it. The reviewer's own scripts, the repository instructions, the architecture
-document, and the decision log are all read from the base revision, so a pull request cannot
-rewrite the reviewer that is about to judge it. The review skill comes from the pinned skills
-revision and applicable standards from the current `Mikode13/engineering` main, whose commit is
-recorded in the review input.
+`Analyze` checks out the pull request head without persisted Git credentials and reads it as
+data: nothing from it runs, and the reviewer starts in a separate work directory. The
+reviewer's own scripts, the repository instructions, the architecture document, and the
+decision log are all read from the base revision, so a pull request cannot rewrite the reviewer
+that is about to judge it. The review skill comes from the pinned skills revision and
+applicable standards from the current `Mikode13/engineering` main, whose commit is recorded in
+the review input.
 
-`AI Review / required` re-runs the full contract validation on the result it receives before it
-acts on it, and neutralizes mentions, HTML, and comment markers in every string it renders.
+`Publish` re-runs the full contract validation on the result it receives before it acts on it,
+and neutralizes mentions, HTML, and comment markers in every string it renders. Under
+`pull_request_target`, `GITHUB_SHA` is the latest commit of `main` rather than the reviewed
+commit, so the job reports the outcome explicitly, as the commit status
+`AI Review / required` of the reviewed commit.
 
 ## Evidence, not a workspace
 
@@ -126,73 +133,90 @@ outcome unenforced.
 
 ## Enforcement
 
-`AI Review / required` becomes a required check through a ruleset, which is a setting rather
-than code, so enabling it takes no pull request. Three rules decide when it may be enabled:
-the [continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
-forbids requiring a check before it has reported under that exact name, neither the provider
-credential nor the check may be within reach of the pull request, as
-[Accepted temporary risk](#accepted-temporary-risk) explains, and the
+During the pilot, `AI Review / required` is reported but not required. Requiring it needs a
+result that no branch can produce, and without a GitHub App the way to get one is the ruleset
+rule "Require workflows to pass before merging", which requires a workflow from a fixed
+repository and revision. That rule cannot require a workflow in the repository that holds it,
+so it arrives with promotion. A GitHub App would close the gap sooner, but promotion would
+remove it again. The
 [automated pull request review standard](https://github.com/Mikode13/engineering/blob/main/standards/automated-pull-request-review.md)
-makes the pilot blocking as soon as both hold. The order is therefore:
+makes the pilot blocking as soon as the check can be required, so the order is:
 
-1. Merge the bootstrap pull request on `CI / required` and human review. Its own
-   `AI Review / required` fails by design, because the reviewer is read from the base revision
-   and the base does not carry it yet.
-2. Open the first end-to-end case. It is the first review run from a trusted base, and its
-   `AI Review / required` must succeed before anything requires it.
-3. Merge the standard update that describes `harness-cli` and these enforcement rules,
+1. Merge the bootstrap pull request on `CI / required` and human review. GitHub runs
+   `pull_request_target` workflows as they are on `main`, and `main` does not carry this one
+   yet, so the bootstrap pull request gets no review at all.
+2. Create the `ai-review` environment and move the token into it, as
+   [Credential setup](#credential-setup) describes.
+3. Run the first end-to-end case and the remaining pilot cases, with the status reported but
+   not required.
+4. Merge the standard update,
    [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41).
-4. Put the provider credential and the check out of a branch's reach, as
-   [Accepted temporary risk](#accepted-temporary-risk) describes.
-5. Require `AI Review / required`, then run the remaining pilot cases under the blocking gate.
+5. Promote, and create the review ruleset in the same change.
 
-Neither organization ruleset has a bypass actor, so requiring the check before step 1 would
-leave the bootstrap pull request unmergeable.
+The review ruleset:
 
-The check belongs in a ruleset of its own:
+| Setting                 | Value                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Target                  | The adopting repositories, default branch                                                                             |
+| Rule                    | Require workflows to pass before merging: `Mikode13/.github`, `.github/workflows/ai-review.yml`, at a full commit SHA |
+| Bypass                  | Organization administrators, for pull requests only                                                                   |
+| Conversation resolution | Already required by the `main-baseline` ruleset                                                                       |
 
-| Setting                 | Value                                               |
-| ----------------------- | --------------------------------------------------- |
-| Target                  | `slop-lab`, default branch                          |
-| Rule                    | Require the status check `AI Review / required`     |
-| Bypass                  | Organization administrators, for pull requests only |
-| Conversation resolution | Already required by the `main-baseline` ruleset     |
-
-Do not add the check to `required-ci`. That organization ruleset is shared with repositories
-that have no workflow reporting `AI Review / required`, and every pull request there would
-wait for it indefinitely. A separate organization ruleset whose target grows as repositories
-adopt the central reviewer follows the way `required-ci` grows with CI adoption.
+Do not add it to `required-ci`. That organization ruleset is shared with repositories that do
+not run the reviewer, and every pull request there would wait for a review that never comes. A
+separate organization ruleset whose target grows as repositories adopt the reviewer follows
+the way `required-ci` grows with CI adoption.
 
 The bypass exists because the standard lets an authorized maintainer merge past an
 `incomplete` review for an exceptional need, recording the reason, the reviewed head commit,
 and the person accepting the risk in the pull request. A pull-request-only bypass keeps that a
 decision about one merge. Without it, the only way past a provider outage is to edit the
-ruleset, which turns the gate off for every other pull request at the same time.
+ruleset, which turns the gate off for every other pull request at the same time. It also
+covers the first run of the required workflow, which only the rule itself starts: the
+[continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
+forbids requiring a check before it has reported, and here the rule is what makes it report.
 
 GitHub reports a job skipped by its condition as successful, and a skipped required check does
 not block a merge. The workflow therefore never skips its way past the gate:
 
-- a base revision without the reviewer or the publisher fails the check, so removing the
-  reviewer from `main` blocks later pull requests instead of quietly turning the gate off;
-- a pull request from a fork fails the check, because it receives no provider secret and
-  cannot be reviewed; and
-- only a draft skips, because a draft cannot merge and marking it ready starts a new review.
+- a base revision without the reviewer or the publisher reports a failing status, so removing
+  the reviewer from `main` fails later reviews instead of quietly passing them;
+- a pull request from a fork reports a failing status, because it cannot be reviewed; and
+- only a draft gets no status, because a draft cannot merge and marking it ready starts a new
+  review.
+
+A workflow that a ruleset requires behaves differently in two ways the promoted version must
+handle. GitHub runs it only for the default activity types, `opened`, `synchronize`, and
+`reopened`, so marking a draft ready does not start it again, and it must fail for a draft
+instead of skipping it. And it must not use `cancel-in-progress`, so a superseded run has to
+stop itself instead of being cancelled.
 
 ## Credential setup
 
-The workflow expects a repository Actions secret named `CLAUDE_CODE_OAUTH_TOKEN`. Generate it
-while authenticated to the dedicated MiKode Claude account:
+The token lives in the `ai-review` environment of this repository, never in a repository or
+organization secret, because any workflow a branch runs can read those. A job can read an
+environment secret only by declaring the environment, and with deployment branches limited to
+`main` only a run from `main` can declare it:
 
-```sh
-claude setup-token
-gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo Mikode13/slop-lab
-```
+1. Create the environment `ai-review`, with deployment branches and tags limited to the
+   selected branch `main`.
+2. Generate the token while authenticated to the dedicated MiKode Claude account, and store it
+   in the environment:
+
+   ```sh
+   claude setup-token
+   gh secret set CLAUDE_CODE_OAUTH_TOKEN --env ai-review --repo Mikode13/slop-lab
+   ```
+
+3. Remove `slop-lab` from the repositories that can use the organization secret
+   `CLAUDE_CODE_OAUTH_TOKEN`, and delete any repository secret of that name. While either is
+   reachable, a branch can still read the token.
 
 Both commands prompt locally. Do not paste the token into an issue, a pull request, a committed
 file, a command argument, or chat. Rotate or remove the secret immediately if it is exposed.
 
-Only the analysis job receives it. The publication job receives a scoped GitHub token and no
-provider credential.
+Only the analysis job declares the environment. The publication job receives a scoped GitHub
+token and no provider credential.
 
 ## Pilot cases
 
@@ -245,60 +269,46 @@ Promote only after roughly ten to twelve controlled executions show:
 - a projected monthly cost within the EUR 30 ceiling; and
 - a measurable difference between candidates raised and findings confirmed after verification.
 
-Promotion takes two pull requests. The first moves the workflow, the runner, the contract
-validator, the publisher, and fixtures to `Mikode13/.github` as the reusable workflow required
-by [Mikode13/engineering#27](https://github.com/Mikode13/engineering/issues/27). The second
-replaces this implementation with a caller pinned to that full commit SHA, after which the
-same cases are repeated to confirm the results do not change. The caller job is named
-`AI Review` and the reusable job `required`, so GitHub keeps reporting `AI Review / required`
-and the ruleset does not change. From then on, as with CI, a reviewer update reaches this
-repository as a reviewed pull request that bumps the pinned SHA, and the previous SHA is the
-rollback target.
+Promotion moves the workflow, the runner, the contract validator, the publisher, and fixtures
+to `Mikode13/.github`, the home
+[Mikode13/engineering#27](https://github.com/Mikode13/engineering/issues/27) tracks, and the
+review ruleset then requires that workflow at a full commit SHA. This repository keeps no
+caller, because the ruleset runs the workflow, and a pull request here removes the local
+implementation. The same cases are repeated to confirm the results do not change. From then on
+a reviewer update is a reviewed pull request in `Mikode13/.github` followed by a change of the
+SHA the ruleset pins, and the previous SHA is the rollback target.
 
-Until then, rollback means removing the pilot workflow and its ruleset together. The
+Until then, rollback means removing the pilot workflow and the `ai-review` environment. The
 pre-pilot revision is
 [`db58dfd`](https://github.com/Mikode13/slop-lab/commit/db58dfd9eef6855548f0fee2be3d8a30b6907c3a).
-Removing or disabling the workflow must not leave `AI Review / required` configured as a
-required check nothing can satisfy.
+Nothing requires `AI Review / required` during the pilot, so removing the workflow leaves no
+check waiting.
 
 ## Accepted temporary risk
 
-Under `pull_request`, GitHub runs every workflow as the pull request branch defines it,
-including workflows the branch adds. Reading the reviewer's scripts from the base revision
-protects the reviewer, but neither the provider token nor the check:
+The review runs from `main` through `pull_request_target`, and the token lives in an
+environment that only a run from `main` can read, so a branch can neither edit this workflow
+nor read the token. The check is the part still within reach. Under `pull_request`, GitHub
+runs every workflow a branch defines or adds, and any of them can report a passing
+`AI Review / required` for the branch's commit, because GitHub matches a status by its name. A
+fork can too, once its workflows are allowed to run. `CI / required` has the same weakness.
 
-- `CLAUDE_CODE_OAUTH_TOKEN` is readable by any workflow that a branch of this repository runs,
-  not only by `ai-review.yml`, so a branch can add a workflow that exfiltrates it. A fork
-  cannot, because it receives no secret.
-- A branch, and a fork once its workflows are allowed to run, can report a passing
-  `AI Review / required` without a review, by editing this workflow or by adding one with a job
-  of that name. GitHub matches a required check by its name, and every such job reports through
-  GitHub Actions. `CI / required` has the same weakness.
-
-The pilot accepts that risk only while all of these hold:
+The pilot accepts that only while all of these hold:
 
 - the maintainer has accepted it explicitly on the bootstrap pull request;
 - only trusted maintainers and their agents push branches to this repository; and
-- `AI Review / required` is not a required check.
+- `AI Review / required` is not required.
 
-Before the check is required, and before promotion, both have to be closed:
-
-- The token moves into an environment whose deployment branches are limited to `main`. A job
-  triggered by `pull_request` runs on `refs/pull/N/merge` and cannot read it, so the review
-  job has to run in the default branch's context, through `pull_request_target` or
-  `workflow_run`, refuse forks before it reads the secret, and still never execute code from
-  the head.
-- The required check has to come from something a branch cannot produce: either a ruleset rule
-  that requires a pinned workflow, if the organization's plan offers it, or a check run
-  published by a MiKode GitHub App that the ruleset names as the check's source. A push
-  ruleset that stopped branches from changing workflows would also work, but GitHub offers push
-  rulesets only to private and internal repositories, and this one is public.
+Promotion closes it, because a workflow that a ruleset requires from a fixed repository and
+revision is something no branch can produce. A push ruleset that stopped branches from
+changing workflows would close it sooner, but GitHub offers push rulesets only to private and
+internal repositories, and this one is public.
 
 ## Known limitations
 
-- A pull request from a fork is not reviewed. It receives no provider secret, so `Analyze`
-  skips it and `AI Review / required` fails; the gate assumes same-repository branches for the
-  duration of the pilot.
+- A pull request from a fork is not reviewed. `pull_request_target` would let its run read the
+  environment, so `Analyze` refuses a fork before it starts and `Publish` reports a failing
+  status; the pilot assumes same-repository branches.
 - A reviewed file over 40,000 bytes, other than a lockfile, makes the run `incomplete`.
 - The runner does not normalize intent. It supplies the closing issue and the description and
   asks the reviewer to resolve the change contract itself, rather than guessing which prose is
