@@ -90,6 +90,20 @@ test('a reviewed file over the file limit makes the build unfit instead of being
 	assert.match(report.missingEssentials[0], /src\/large\.js.*1000-byte file limit/u);
 });
 
+test('a changed lockfile is reviewed through its diff and never counts as an oversized file', () => {
+	const directories = workspace({
+		'package.json': '{ "name": "example" }\n',
+		'pnpm-lock.yaml': `lockfileVersion: '9.0'\n${'# resolution\n'.repeat(200)}`,
+	});
+	const report = build(directories, { FILE_LIMIT: '1000' });
+	const prompt = readFileSync(join(directories.work, 'prompt.txt'), 'utf8');
+
+	assert.equal(report.fits, true);
+	assert.deepEqual(report.missingEssentials, []);
+	assert.doesNotMatch(prompt, /# resolution/u);
+	assert.match(prompt, /intentionally not supplied: pnpm-lock\.yaml/u);
+});
+
 test('a budget spent by the mandatory sections never produces a build that fits', () => {
 	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
 	const mandatoryOnly = build(directories, { PROMPT_LIMIT: '1' }).bytes;

@@ -11,16 +11,16 @@ requires.
 A pilot that changes while it is measured proves nothing, so these are fixed for its duration
 and recorded in [the workflow](../.github/workflows/ai-review.yml):
 
-| Choice           | Value                                                                          |
-| ---------------- | ------------------------------------------------------------------------------ |
-| Reviewer command | `@mikode13/harness-cli@1.1.0`, with the prompt passed through `--prompt-file`  |
-| Review skill     | `mikode-review` from `Mikode13/skills` at `6015886`, the `v0.3.0` tag          |
-| Provider         | Claude, on a MiKode-owned account, through `CLAUDE_CODE_OAUTH_TOKEN`           |
-| Model and effort | `sonnet` at `high` reasoning effort                                            |
-| Provider timeout | 10 minutes per turn, enforced by the runner                                    |
-| Repair attempts  | At most one additional turn to recover a reply that failed contract validation |
-| Evidence budget  | 400,000 bytes of prompt, filled in priority order and never truncated          |
-| Cost ceiling     | The EUR 30 per month the standard allows for the whole provider account        |
+| Choice           | Value                                                                                         |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| Reviewer command | `@mikode13/harness-cli@1.1.0`, with the prompt passed through `--prompt-file`                 |
+| Review skill     | `mikode-review` from `Mikode13/skills` at `6015886`, the `v0.3.0` tag                         |
+| Provider         | Claude, on a MiKode-owned account, through `CLAUDE_CODE_OAUTH_TOKEN`                          |
+| Model and effort | `sonnet` at `high` reasoning effort                                                           |
+| Provider timeout | 10 minutes per turn, enforced by the runner                                                   |
+| Repair attempts  | At most one additional turn to recover a reply that failed contract validation                |
+| Evidence budget  | 1,250,000 bytes of prompt, about 500,000 tokens, filled in priority order and never truncated |
+| Cost ceiling     | The EUR 30 per month the standard allows for the whole provider account                       |
 
 The standard's provider section still describes Claude Code GitHub Actions. That paragraph is
 mutable by a reviewed standard update, and it must be updated to describe `harness-cli` before
@@ -73,11 +73,17 @@ does supplying a reviewed file only in part, so a reviewed file over 40,000 byte
 missing too. Either way the run is abandoned as `incomplete` before the provider is called
 rather than after it returns a vague one.
 
+Lockfiles are the exception. A changed lockfile is reviewed through its diff, which already
+shows every package and version that moved; its full resolution graph adds size without review
+value, so it is never supplied whole and never counts as oversized. An untouched lockfile
+costs nothing, because only the files a pull request changes are supplied.
+
 The prompt reaches `harness-cli` as a file through `--prompt-file`, so the model sets its size
-rather than the command line. The 400,000-byte budget is about 130,000 tokens at a
-conservative three bytes per token, which leaves room in a 200,000-token context window for the
-agent's own prompt, its tools, and the reply. Every run records its input tokens in the review
-report, and the first real runs should recalibrate the figure.
+rather than the command line. The 1,250,000-byte budget is about 500,000 tokens at the roughly
+2.5 characters per token that Anthropic documents for the current tokenizer. That is half of
+Sonnet 5's 1M-token window: it leaves room for the agent's own prompt and the reply, and it
+stays below the length at which a long context starts to degrade the review. Every run records
+its input tokens in the review report, so the first real runs can confirm the ratio.
 
 Measured against the pinned skill and the current standards:
 
@@ -117,8 +123,8 @@ outcome unenforced.
 `AI Review / required` becomes a required check through a ruleset, which is a setting rather
 than code, so enabling it takes no pull request. Three rules decide when it may be enabled:
 the [continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
-forbids requiring a check before it has reported under that exact name, the workflow that
-holds the provider credential must not be one the pull request can edit, as
+forbids requiring a check before it has reported under that exact name, neither the provider
+credential nor the check may be within reach of the pull request, as
 [Accepted temporary risk](#accepted-temporary-risk) explains, and the
 [automated pull request review standard](https://github.com/Mikode13/engineering/blob/main/standards/automated-pull-request-review.md)
 makes the pilot blocking as soon as both hold. The order is therefore:
@@ -130,8 +136,8 @@ makes the pilot blocking as soon as both hold. The order is therefore:
    `AI Review / required` must succeed before anything requires it.
 3. Merge the standard update that describes `harness-cli` and these enforcement rules,
    [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41).
-4. Load the workflow that receives the provider credential and reports the check from a
-   trusted revision.
+4. Put the provider credential and the check out of a branch's reach, as
+   [Accepted temporary risk](#accepted-temporary-risk) describes.
 5. Require `AI Review / required`, then run the remaining pilot cases under the blocking gate.
 
 Neither organization ruleset has a bypass actor, so requiring the check before step 1 would
@@ -251,34 +257,43 @@ required check nothing can satisfy.
 
 ## Accepted temporary risk
 
-Under `pull_request`, GitHub reads the workflow file from the pull request head. The reviewer's
-scripts come from the base revision, but the workflow that calls them does not, and that
-workflow hands `CLAUDE_CODE_OAUTH_TOKEN` to `Analyze`. A branch can therefore edit it to
-exfiltrate the token, or to report a passing `AI Review / required` without a review.
+Under `pull_request`, GitHub runs every workflow as the pull request branch defines it,
+including workflows the branch adds. Reading the reviewer's scripts from the base revision
+protects the reviewer, but neither the provider token nor the check:
 
-A fork cannot: it receives no secret, and its check fails. Anyone who can push a branch to this
-repository can, and that includes the agents that implement changes here. The pilot accepts
-the risk only while all of these hold:
+- `CLAUDE_CODE_OAUTH_TOKEN` is readable by any workflow that a branch of this repository runs,
+  not only by `ai-review.yml`, so a branch can add a workflow that exfiltrates it. A fork
+  cannot, because it receives no secret.
+- A branch, and a fork once its workflows are allowed to run, can report a passing
+  `AI Review / required` without a review, by editing this workflow or by adding one with a job
+  of that name. GitHub matches a required check by its name, and every such job reports through
+  GitHub Actions. `CI / required` has the same weakness.
+
+The pilot accepts that risk only while all of these hold:
 
 - the maintainer has accepted it explicitly on the bootstrap pull request;
 - only trusted maintainers and their agents push branches to this repository; and
 - `AI Review / required` is not a required check.
 
-Before the check is required, and before promotion, the workflow that receives the provider
-credential and reports the check must be loaded from a trusted revision, without running code
-or configuration from the head. Either a ruleset rule that requires a pinned workflow, or a
-workflow that GitHub loads from the base revision, satisfies that; `pull_request_target` does
-the latter but hands secrets to forks as well, so it needs its own fork boundary. A pinned
-central caller alone does not, because the caller is also read from the head.
+Before the check is required, and before promotion, both have to be closed:
+
+- The token moves into an environment whose deployment branches are limited to `main`. A job
+  triggered by `pull_request` runs on `refs/pull/N/merge` and cannot read it, so the review
+  job has to run in the default branch's context, through `pull_request_target` or
+  `workflow_run`, refuse forks before it reads the secret, and still never execute code from
+  the head.
+- The required check has to come from something a branch cannot produce: either a ruleset rule
+  that requires a pinned workflow, if the organization's plan offers it, or a check run
+  published by a MiKode GitHub App that the ruleset names as the check's source. A push
+  ruleset that stopped branches from changing workflows would also work, but GitHub offers push
+  rulesets only to private and internal repositories, and this one is public.
 
 ## Known limitations
 
 - A pull request from a fork is not reviewed. It receives no provider secret, so `Analyze`
   skips it and `AI Review / required` fails; the gate assumes same-repository branches for the
   duration of the pilot.
-- A reviewed file over 40,000 bytes makes the run `incomplete`. Today that includes
-  `pnpm-lock.yaml`, so a dependency update cannot be reviewed until the file limit or the
-  handling of lockfiles changes.
+- A reviewed file over 40,000 bytes, other than a lockfile, makes the run `incomplete`.
 - The runner does not normalize intent. It supplies the closing issue and the description and
   asks the reviewer to resolve the change contract itself, rather than guessing which prose is
   an acceptance criterion.

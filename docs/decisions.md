@@ -130,8 +130,9 @@ in pull request 2 needed about 250 KiB: it would have displaced the reviewed fil
 specialist guides, the architecture document, the decision log, and two standards. Instead of
 shrinking the evidence to fit, `harness-cli` 1.1.0 added `--prompt-file`
 ([harness-cli#7](https://github.com/Mikode13/harness-cli/issues/7)) and the pilot adopted it
-before merging. The budget is now 400,000 bytes, sized to the model's context window, and the
-bootstrap fits whole.
+before merging. The budget is now 1,250,000 bytes, about 500,000 tokens: half of Sonnet 5's
+1M-token window, below the length at which a long context degrades the review, and enough for
+the bootstrap to fit whole.
 
 **Lesson.** Measure the transport before planning around it. The argument limit was expected to
 matter for unusually large pull requests; it turned out to bind on the smallest real one and to
@@ -162,24 +163,28 @@ recorded reason, instead of an edit to the ruleset.
 **Lesson.** On a required check, skipped means passed. A condition that skips a gate opens it,
 so every path that cannot produce a review has to fail.
 
-## Require a trusted workflow before the review gate is required
+## Put the token and the check out of a branch's reach before the gate is required
 
-**Decision.** `AI Review / required` stays unrequired until the workflow that receives the
-provider credential and reports the check is loaded from a trusted revision. Until then the
-pilot runs only on branches pushed by trusted maintainers and their agents, with the risk
-accepted explicitly on the bootstrap pull request.
+**Decision.** `AI Review / required` stays unrequired until neither the provider token nor the
+check can be reached by the pull request under review. The token moves into an environment
+limited to `main`, the review runs in the default branch's context, and the check comes from
+a source a branch cannot act as. Until then the pilot runs only on branches pushed by trusted
+maintainers and their agents, with the risk accepted explicitly on the bootstrap pull request.
 
-**Context.** Under `pull_request`, GitHub reads the workflow from the pull request head.
-Reading the reviewer's scripts from the base revision protects the reviewer, not the workflow
-that calls it and hands it the provider token, so a branch could rewrite that workflow to
-exfiltrate the token or to report a passing check without a review. Branches here are pushed
-by implementing agents as well as by the maintainer.
+**Context.** Under `pull_request`, GitHub runs every workflow as the pull request branch
+defines it, including workflows the branch adds, and gives a branch of the same repository its
+secrets. Reading the reviewer's scripts from the base revision protects the reviewer, not the
+token, which any branch workflow can read, and not the check, which any branch workflow can
+report under the same name. Branches here are pushed by implementing agents as well as by the
+maintainer.
 
 **Consequences.** The pilot can run before the gate is required, but the gate cannot be
-required, and the implementation cannot be promoted, until the workflow comes from a trusted
-revision: a ruleset rule that requires a pinned workflow, or a workflow loaded from the base
-revision. A pinned central caller alone is not enough, because the caller is read from the
-head as well.
+required, and the implementation cannot be promoted, until both are closed. The check has to
+come from a ruleset rule that requires a pinned workflow, if the plan offers it, or from a
+MiKode GitHub App that the ruleset names as its source. A push ruleset that blocked workflow
+changes is not available, because GitHub offers push rulesets only to private and internal
+repositories.
 
-**Lesson.** Trusting the code a workflow runs is not the same as trusting the workflow. The
-boundary has to include the file that holds the secret.
+**Lesson.** Trusting the code a workflow runs is not the same as trusting the workflow, and
+trusting the workflow is not the same as trusting every workflow a branch can add. The boundary
+has to include the secret and the name of the check.

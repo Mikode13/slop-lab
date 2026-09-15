@@ -34,10 +34,11 @@ const policyDirectory = environment('POLICY_DIR');
 const policyRevision = environment('POLICY_REVISION');
 const outputDirectory = environment('OUTPUT_DIR');
 
-// About 130,000 tokens at a conservative three bytes per token, which leaves room in a
-// 200,000-token context window for the agent's own prompt, its tools, and the reply. Every run
-// reports its input tokens, so the first real runs should recalibrate this figure.
-const promptLimit = Number(process.env.PROMPT_LIMIT ?? 400_000);
+// About 500,000 tokens at the roughly 2.5 characters per token that Anthropic documents for the
+// current tokenizer: half of Sonnet 5's 1M-token window, which leaves room for the agent's own
+// prompt and the reply and stays below the length at which a long context degrades the review.
+// Every run reports its input tokens, so the first real runs can confirm the ratio.
+const promptLimit = Number(process.env.PROMPT_LIMIT ?? 1_250_000);
 const fileLimit = Number(process.env.FILE_LIMIT ?? 40_000);
 
 // Declared omissions are discovered while sections are selected, so the budget keeps room for
@@ -47,6 +48,18 @@ const omissionReserve = 4_000;
 const fence = `UNTRUSTED-${randomUUID()}`;
 const omissions = [];
 const oversized = [];
+const diffOnly = [];
+
+// A lockfile's change is its diff. The full resolution graph adds size, not review value, so a
+// changed lockfile is reviewed through the diff alone and never counts as an oversized file.
+const lockfiles = new Set([
+	'bun.lock',
+	'npm-shrinkwrap.json',
+	'package-lock.json',
+	'pnpm-lock.yaml',
+	'yarn.lock',
+]);
+const isLockfile = path => lockfiles.has(path.split('/').at(-1));
 
 const readIfPresent = path => (existsSync(path) ? readFileSync(path, 'utf8') : null);
 const bytes = text => Buffer.byteLength(text, 'utf8');
@@ -129,6 +142,10 @@ const outputReminder =
 const changedFileSection = () => {
 	const blocks = [];
 	for (const path of changedFiles) {
+		if (isLockfile(path)) {
+			diffOnly.push(path);
+			continue;
+		}
 		const content = readIfPresent(join(headDirectory, path));
 		if (content === null) continue;
 		if (bytes(content) > fileLimit) {
@@ -137,6 +154,12 @@ const changedFileSection = () => {
 			continue;
 		}
 		blocks.push(untrusted(`file ${path} at ${headSha}`, content));
+	}
+	if (diffOnly.length > 0) {
+		blocks.push(
+			`Lockfiles are reviewed through the diff above, and their full content is ` +
+				`intentionally not supplied: ${diffOnly.join(', ')}.`,
+		);
 	}
 	return blocks.length > 0 ? blocks.join('\n\n') : null;
 };
