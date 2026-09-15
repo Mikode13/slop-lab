@@ -1,16 +1,16 @@
 /**
- * Assembles the single prompt that `harness-cli single-turn` receives.
+ * Assembles the single prompt that `harness-cli single-turn` reads through `--prompt-file`.
  *
  * The reviewer runs without `--auto-approve`, so a permission request would stall it rather
  * than fail it, and `@mikode13/harness` caps a Claude turn at three turns. Exploration is
  * therefore not a strategy the pilot can rely on: every source the review may use is
  * collected by this job and inlined here.
  *
- * Linux limits one argument to 128 KiB, so the budget below is a real constraint and not a
- * precaution. Sections are added whole, in priority order, until the budget is spent; a
- * section is never truncated. What did not fit is declared to the reviewer as a missing
- * source, which the contract expects it to turn into reduced coverage rather than a silent
- * pass.
+ * Because the prompt travels as a file, the command line no longer bounds it; the budget below
+ * guards the model's context window instead. Sections are added whole, in priority order, until
+ * the budget is spent; a section is never truncated. What did not fit is declared to the
+ * reviewer as a missing source, which the contract expects it to turn into reduced coverage
+ * rather than a silent pass.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -34,7 +34,10 @@ const policyDirectory = environment('POLICY_DIR');
 const policyRevision = environment('POLICY_REVISION');
 const outputDirectory = environment('OUTPUT_DIR');
 
-const promptLimit = Number(process.env.PROMPT_LIMIT ?? 120_000);
+// About 130,000 tokens at a conservative three bytes per token, which leaves room in a
+// 200,000-token context window for the agent's own prompt, its tools, and the reply. Every run
+// reports its input tokens, so the first real runs should recalibrate this figure.
+const promptLimit = Number(process.env.PROMPT_LIMIT ?? 400_000);
 const fileLimit = Number(process.env.FILE_LIMIT ?? 40_000);
 
 // Declared omissions are discovered while sections are selected, so the budget keeps room for

@@ -110,27 +110,30 @@ boundaries have first been exercised by the canary that will consume it.
 trusted base context, and the applicable standards, and sends them to the reviewer as one
 prompt. The reviewer reads no repository, runs no command, and explores nothing.
 
-**Context.** The pilot runs the review through `harness-cli`, which passes its prompt as a
-single command argument, leaves a non-interactive run with nobody to approve a tool permission,
-and caps a Claude turn at three turns. A reviewer that tried to explore would stall on its
-first permission request until the deadline, and a stalled run is indistinguishable from a
-thorough one until it fails. Collecting the evidence in the job also keeps the reviewer's
-inputs read from a trusted revision rather than from the branch under review.
+**Context.** The pilot runs the review through `harness-cli`, which leaves a non-interactive
+run with nobody to approve a tool permission and caps a Claude turn at three turns. A reviewer
+that tried to explore would stall on its first permission request until the deadline, and a
+stalled run is indistinguishable from a thorough one until it fails. Collecting the evidence in
+the job also keeps the reviewer's inputs read from a trusted revision rather than from the
+branch under review.
 
-**Consequences.** Linux caps a single argument at 128 KiB, which makes the prompt budget a
-real limit rather than a precaution. Sections are added whole in priority order and never
-truncated, and whatever does not fit is declared to the reviewer and republished in the
-summary, so missing context reduces coverage instead of quietly producing a clean review. When
-the trusted instructions or the reviewed files are what got displaced, the run is abandoned as
-`incomplete` before the provider is called, because paying for a review of a diff with no
-surrounding code buys nothing. Measured against the pinned skill and the current standards, the
-three-file documentation change in pull request 1 fits at 113 KiB, and the eight-file bootstrap
-in pull request 2 does not: it displaces the reviewed files, all three specialist guides, the
-architecture document, the decision log, and two standards, because it needs 249 KiB against a
-128 KiB ceiling. Until `harness-cli` accepts a prompt from a file or stdin,
-[harness-cli#7](https://github.com/Mikode13/harness-cli/issues/7), the pilot can only measure
-small changes.
+**Consequences.** Evidence has a size, so the prompt has a budget. Sections are added whole in
+priority order and never truncated, and whatever does not fit is declared to the reviewer and
+republished in the summary, so missing context reduces coverage instead of quietly producing a
+clean review. When the trusted instructions or the reviewed files are what got displaced, the
+run is abandoned as `incomplete` before the provider is called, because paying for a review of
+a diff with no surrounding code buys nothing.
+
+The first budget was set by the transport rather than the model. `harness-cli` 1.0.1 took the
+prompt as a single command argument, which Linux caps at 128 KiB, and the eight-file bootstrap
+in pull request 2 needed about 250 KiB: it would have displaced the reviewed files, all three
+specialist guides, the architecture document, the decision log, and two standards. Instead of
+shrinking the evidence to fit, `harness-cli` 1.1.0 added `--prompt-file`
+([harness-cli#7](https://github.com/Mikode13/harness-cli/issues/7)) and the pilot adopted it
+before merging. The budget is now 400,000 bytes, sized to the model's context window, and the
+bootstrap fits whole.
 
 **Lesson.** Measure the transport before planning around it. The argument limit was expected to
 matter for unusually large pull requests; it turned out to bind on the smallest real one and to
-exclude an ordinary one.
+exclude an ordinary one. Removing it where it lived took one small release, while designing
+around it would have shaped every later review.

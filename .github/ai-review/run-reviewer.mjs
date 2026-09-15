@@ -27,22 +27,22 @@ const baseSha = environment('BASE_SHA');
 const headSha = environment('HEAD_SHA');
 const workDirectory = environment('OUTPUT_DIR');
 
-const harnessPackage = process.env.HARNESS_PACKAGE ?? '@mikode13/harness-cli@1.0.1';
+const harnessPackage = process.env.HARNESS_PACKAGE ?? '@mikode13/harness-cli@1.1.0';
 const reviewerCommand = process.env.REVIEWER_COMMAND ?? 'npx';
 const model = process.env.REVIEW_MODEL ?? 'sonnet';
 const effort = process.env.REVIEW_EFFORT ?? 'high';
 const timeoutMs = Number(process.env.REVIEW_TIMEOUT_SECONDS ?? 600) * 1000;
-const promptLimit = Number(process.env.PROMPT_LIMIT ?? 120_000);
 
 const expected = { repository, base: baseSha, head: headSha };
 const usage = [];
 const bytes = text => Buffer.byteLength(text, 'utf8');
 
 /**
- * Runs the reviewer once. The prompt is passed as a single argv element to a command spawned
- * without a shell, so generated content can never be parsed as a command.
+ * Runs the reviewer once. The prompt travels as a file that `harness-cli` reads itself: the
+ * command line bounds none of its size, none of its content becomes an argument, and the
+ * command is spawned without a shell.
  */
-function runTurn(prompt) {
+function runTurn(promptPath) {
 	return new Promise(resolve => {
 		const args =
 			reviewerCommand === 'npx'
@@ -50,7 +50,7 @@ function runTurn(prompt) {
 				: ['single-turn', '--agent', 'claude'];
 		const child = spawn(
 			reviewerCommand,
-			[...args, '--model', model, '--reasoning-effort', effort, prompt],
+			[...args, '--model', model, '--reasoning-effort', effort, '--prompt-file', promptPath],
 			{ stdio: ['ignore', 'pipe', 'pipe'], shell: false },
 		);
 
@@ -172,7 +172,7 @@ ${reply}
 Reasons it was rejected:
 ${errors.map(error => `- ${error}`).join('\n')}`;
 
-const prompt = readFileSync(join(workDirectory, 'prompt.txt'), 'utf8');
+const promptPath = join(workDirectory, 'prompt.txt');
 const buildReport = JSON.parse(readFileSync(join(workDirectory, 'build-report.json'), 'utf8'));
 
 let outcome = 'incomplete';
@@ -185,27 +185,27 @@ if (!buildReport.fits) {
 	errors = [
 		missing.length > 0
 			? `This change needs ${buildReport.bytes} bytes of evidence, and the ` +
-				`${buildReport.limit}-byte limit on a single command argument displaced ` +
-				`${missing.join(' and ')}. A review without that is not worth the provider call.`
-			: `This change needs ${buildReport.bytes} bytes of evidence, which does not fit the ` +
-				`${buildReport.limit}-byte limit on a single command argument.`,
-		'Reviewing a change this size needs harness-cli to accept a prompt on stdin or from a file.',
+				`${buildReport.limit}-byte review budget displaced ${missing.join(' and ')}. ` +
+				'A review without that is not worth the provider call.'
+			: `The diff and the mandatory context alone need ${buildReport.bytes} bytes, which ` +
+				`exceeds the ${buildReport.limit}-byte review budget.`,
 	];
 } else {
 	attempts = 1;
-	let attempt = interpret(await runTurn(prompt));
+	let attempt = interpret(await runTurn(promptPath));
 
 	// One bounded repair, and only for a reply that already exists: a malformed envelope is a
-	// failed run, and re-asking for it would spend the provider again on the same failure.
+	// failed run, and re-asking for it would spend the provider again on the same failure. The
+	// repair carries the reply and the reasons, not the evidence, so it needs no budget of its own.
 	const repairable =
 		!attempt.result && typeof attempt.reply === 'string' && attempt.reply.trim() !== '';
-	const repairFits =
-		repairable && bytes(repairPrompt(attempt.reply, attempt.errors)) <= promptLimit;
 
-	if (repairable && repairFits) {
+	if (repairable) {
 		attempts = 2;
 		console.log('The first reply failed validation; attempting one repair.');
-		const repaired = interpret(await runTurn(repairPrompt(attempt.reply, attempt.errors)));
+		const repairPath = join(workDirectory, 'repair-prompt.txt');
+		writeFileSync(repairPath, repairPrompt(attempt.reply, attempt.errors));
+		const repaired = interpret(await runTurn(repairPath));
 		if (repaired.result) {
 			attempt = repaired;
 		} else {
@@ -213,10 +213,6 @@ if (!buildReport.fits) {
 				errors: [...attempt.errors, ...repaired.errors.map(error => `After repair: ${error}`)],
 			};
 		}
-	} else if (repairable) {
-		attempt = {
-			errors: [...attempt.errors, 'The rejected reply was too large to send back for repair.'],
-		};
 	}
 
 	if (attempt.result) {

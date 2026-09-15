@@ -19,7 +19,7 @@ concurrency:
 env:
   # The pilot is frozen on these revisions so that a result can be attributed to a reviewer,
   # not to whatever the ecosystem published that morning.
-  HARNESS_PACKAGE: '@mikode13/harness-cli@1.0.1'
+  HARNESS_PACKAGE: '@mikode13/harness-cli@1.1.0'
   SKILL_REVISION: 6015886996d5fbadc21aa49353f7e476ae1737be
   REVIEW_MODEL: sonnet
   REVIEW_EFFORT: high

@@ -13,12 +13,13 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 
 | Choice           | Value                                                                          |
 | ---------------- | ------------------------------------------------------------------------------ |
-| Reviewer command | `@mikode13/harness-cli@1.0.1`                                                  |
+| Reviewer command | `@mikode13/harness-cli@1.1.0`, with the prompt passed through `--prompt-file`  |
 | Review skill     | `mikode-review` from `Mikode13/skills` at `6015886`, the `v0.3.0` tag          |
 | Provider         | Claude, on a MiKode-owned account, through `CLAUDE_CODE_OAUTH_TOKEN`           |
 | Model and effort | `sonnet` at `high` reasoning effort                                            |
 | Provider timeout | 10 minutes per turn, enforced by the runner                                    |
 | Repair attempts  | At most one additional turn to recover a reply that failed contract validation |
+| Evidence budget  | 400,000 bytes of prompt, filled in priority order and never truncated          |
 | Cost ceiling     | The EUR 30 per month the standard allows for the whole provider account        |
 
 The standard's provider section still describes Claude Code GitHub Actions. That paragraph is
@@ -52,11 +53,9 @@ acts on it, and neutralizes mentions, HTML, and comment markers in every string 
 
 ## Evidence, not a workspace
 
-The reviewer receives one prompt and explores nothing. Three properties of the runtime make
+The reviewer receives one prompt and explores nothing. Two properties of the runtime make
 that the only reliable design:
 
-- `harness-cli single-turn` takes its prompt as a single command argument, and Linux caps one
-  argument at 128 KiB;
 - a run without `--auto-approve` has nobody to grant a tool permission, so a request to run a
   command stalls until the deadline instead of failing; and
 - `@mikode13/harness` caps a Claude turn at three turns, which is not an exploration budget.
@@ -72,23 +71,23 @@ Dropping the trusted `AGENTS.md` or the reviewed files leaves nothing worth revi
 the run is abandoned as `incomplete` before the provider is called rather than after it
 returns a vague one.
 
-The budget does not currently hold this repository's work. Two measurements against the
-pinned skill and the current standards:
+The prompt reaches `harness-cli` as a file through `--prompt-file`, so the model sets its size
+rather than the command line. The 400,000-byte budget is about 130,000 tokens at a
+conservative three bytes per token, which leaves room in a 200,000-token context window for the
+agent's own prompt, its tools, and the reply. Every run records its input tokens in the review
+report, and the first real runs should recalibrate the figure.
 
-| Change                                                | Prompt  | Result                                                                                                                                      |
-| ----------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| The three-file documentation change in pull request 1 | 113 KiB | Runs, having displaced only the README                                                                                                      |
-| The eight-file bootstrap in pull request 2            | 116 KiB | Refused: the reviewed files, all three specialist guides, the architecture document, the decision log, and two standards were all displaced |
+Measured against the pinned skill and the current standards:
 
-So an ordinary change in this repository does not fit, and the limit binds on the smallest
-real one. The evidence an eight-file change needs is 249 KiB, roughly twice what the transport
-can carry, and 93 KiB of that is fixed cost that does not depend on the change at all.
+| Change                                                | Prompt  | Result              |
+| ----------------------------------------------------- | ------- | ------------------- |
+| The three-file documentation change in pull request 1 | 114 KiB | Everything supplied |
+| The eight-file bootstrap in pull request 2            | 250 KiB | Everything supplied |
 
-[harness-cli#7](https://github.com/Mikode13/harness-cli/issues/7) tracks the fix: accepting the
-prompt from a file or stdin. Until it ships, the pilot can only measure small changes, and the
-promotion criterion on accidental `incomplete` is not reachable for ordinary ones. Adopting it
-means raising the pinned `harness-cli` version, passing the prompt by file, and revisiting the
-budget in `build-prompt.mjs`.
+Until `harness-cli` 1.1.0 the prompt was a single command argument, which Linux caps at
+128 KiB. That refused pull request 2 before the provider was called, so the limit was removed
+where it lived, in [harness-cli#7](https://github.com/Mikode13/harness-cli/issues/7), rather
+than designed around here.
 
 ## Outcomes
 
@@ -131,10 +130,9 @@ provider credential.
 
 The change that was reserved as the first case,
 [pull request 1](https://github.com/Mikode13/slop-lab/pull/1), merged before the reviewer
-existed, so the first end-to-end case has to be a new one. It should be small enough to fit the
-prompt budget and should exercise the same property that one would have: a change whose known
-`src/` defects are pre-existing, so the expected result is `clean` with those defects reported
-as non-blocking follow-up work.
+existed, so the first end-to-end case has to be a new one. It should exercise the same property
+that one would have: a change whose known `src/` defects are pre-existing, so the expected
+result is `clean` with those defects reported as non-blocking follow-up work.
 
 The mechanical cases below do not need the provider: `REVIEWER_COMMAND` replaces `harness-cli`
 with a command that returns a prepared reply, which is how the failure paths are exercised
