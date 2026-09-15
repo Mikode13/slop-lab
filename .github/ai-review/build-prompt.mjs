@@ -46,6 +46,7 @@ const omissionReserve = 4_000;
 
 const fence = `UNTRUSTED-${randomUUID()}`;
 const omissions = [];
+const oversized = [];
 
 const readIfPresent = path => (existsSync(path) ? readFileSync(path, 'utf8') : null);
 const bytes = text => Buffer.byteLength(text, 'utf8');
@@ -132,6 +133,7 @@ const changedFileSection = () => {
 		if (content === null) continue;
 		if (bytes(content) > fileLimit) {
 			omissions.push(`${path} at the reviewed revision was too large to supply in full.`);
+			oversized.push(path);
 			continue;
 		}
 		blocks.push(untrusted(`file ${path} at ${headSha}`, content));
@@ -196,19 +198,19 @@ for (const [label, load] of mandatory) {
 // pass declares, is never the reason the prompt overruns.
 used += bytes(section(inputLabel, JSON.stringify(buildReviewInput(), null, 2)));
 
-if (used <= promptLimit) {
-	for (const [label, load] of optional) {
-		const body = load();
-		if (body === null) continue;
-		const size = bytes(section(label, body));
-		if (used + size > promptLimit) {
-			omissions.push(`${label} did not fit within the reviewer's input budget.`);
-			dropped.push(label);
-			continue;
-		}
-		parts.push(section(label, body));
-		used += size;
+// The pass runs even when the mandatory sections already spent the budget, so every section it
+// cannot add is recorded as dropped instead of disappearing without a trace.
+for (const [label, load] of optional) {
+	const body = load();
+	if (body === null) continue;
+	const size = bytes(section(label, body));
+	if (used + size > promptLimit) {
+		omissions.push(`${label} did not fit within the reviewer's input budget.`);
+		dropped.push(label);
+		continue;
 	}
+	parts.push(section(label, body));
+	used += size;
 }
 
 const reviewInput = JSON.stringify(buildReviewInput(), null, 2);
@@ -216,7 +218,16 @@ const prompt = [section(inputLabel, reviewInput), ...parts, section('Output', ou
 	'',
 );
 
-const missingEssentials = dropped.filter(label => essential.has(label));
+// A reviewed file supplied only in part would let the reviewer judge code it never saw, so an
+// oversized one disqualifies the run as surely as a displaced section does.
+const missingEssentials = [
+	...dropped
+		.filter(label => essential.has(label))
+		.map(label => `${label}, displaced by the ${promptLimit}-byte review budget`),
+	...oversized.map(
+		path => `the full content of ${path}, which exceeds the ${fileLimit}-byte file limit`,
+	),
+];
 const fits = bytes(prompt) <= promptLimit && missingEssentials.length === 0;
 
 writeFileSync(join(outputDirectory, 'prompt.txt'), prompt);

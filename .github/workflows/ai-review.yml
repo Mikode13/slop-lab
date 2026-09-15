@@ -239,3 +239,25 @@ jobs:
             exit 1
           fi
           node .github/ai-review/publish-result.mjs
+
+  # Tests the reviewer scripts as this pull request changes them. It needs no credential and no
+  # write access, and it reports on its own rather than through the review gate.
+  test:
+    name: Reviewer tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.0.0
+        with:
+          node-version: 24
+
+      - name: Run the reviewer tests
+        run: node --test '.github/ai-review/tests/*.test.mjs'

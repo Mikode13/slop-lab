@@ -161,3 +161,25 @@ recorded reason, instead of an edit to the ruleset.
 
 **Lesson.** On a required check, skipped means passed. A condition that skips a gate opens it,
 so every path that cannot produce a review has to fail.
+
+## Require a trusted workflow before the review gate is required
+
+**Decision.** `AI Review / required` stays unrequired until the workflow that receives the
+provider credential and reports the check is loaded from a trusted revision. Until then the
+pilot runs only on branches pushed by trusted maintainers and their agents, with the risk
+accepted explicitly on the bootstrap pull request.
+
+**Context.** Under `pull_request`, GitHub reads the workflow from the pull request head.
+Reading the reviewer's scripts from the base revision protects the reviewer, not the workflow
+that calls it and hands it the provider token, so a branch could rewrite that workflow to
+exfiltrate the token or to report a passing check without a review. Branches here are pushed
+by implementing agents as well as by the maintainer.
+
+**Consequences.** The pilot can run before the gate is required, but the gate cannot be
+required, and the implementation cannot be promoted, until the workflow comes from a trusted
+revision: a ruleset rule that requires a pinned workflow, or a workflow loaded from the base
+revision. A pinned central caller alone is not enough, because the caller is read from the
+head as well.
+
+**Lesson.** Trusting the code a workflow runs is not the same as trusting the workflow. The
+boundary has to include the file that holds the secret.

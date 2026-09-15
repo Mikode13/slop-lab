@@ -34,12 +34,13 @@ is opened, reopened, marked ready, or receives a new commit. A per-pull-request 
 group cancels superseded executions, so a new commit discards the result of the previous one.
 Analysis starts only after `CI / required` succeeds for the same head commit.
 
-The work is split across two jobs that do not share credentials:
+The work is split across jobs that do not share credentials:
 
-| Job                    | Credentials                              | Responsibility                                          |
-| ---------------------- | ---------------------------------------- | ------------------------------------------------------- |
-| `Analyze`              | Provider token, read-only GitHub token   | Collect evidence, run the reviewer, validate the result |
-| `AI Review / required` | GitHub token with `pull-requests: write` | Revalidate, publish the review, report the check        |
+| Job                    | Credentials                              | Responsibility                                             |
+| ---------------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| `Analyze`              | Provider token, read-only GitHub token   | Collect evidence, run the reviewer, validate the result    |
+| `AI Review / required` | GitHub token with `pull-requests: write` | Revalidate, publish the review, report the check           |
+| `Reviewer tests`       | Read-only GitHub token                   | Test the reviewer scripts as the pull request changes them |
 
 `Analyze` checks out the pull request head without persisted Git credentials and never runs
 anything from it. The reviewer's own scripts, the repository instructions, the architecture
@@ -67,9 +68,10 @@ truncated. What did not fit is declared to the reviewer as a missing source and 
 the summary under "Context not supplied to the reviewer", which the contract expects it to turn
 into reduced coverage rather than a silent pass.
 
-Dropping the trusted `AGENTS.md` or the reviewed files leaves nothing worth reviewing, so
-the run is abandoned as `incomplete` before the provider is called rather than after it
-returns a vague one.
+Dropping the trusted `AGENTS.md` or the reviewed files leaves nothing worth reviewing, and so
+does supplying a reviewed file only in part, so a reviewed file over 40,000 bytes counts as
+missing too. Either way the run is abandoned as `incomplete` before the provider is called
+rather than after it returns a vague one.
 
 The prompt reaches `harness-cli` as a file through `--prompt-file`, so the model sets its size
 rather than the command line. The 400,000-byte budget is about 130,000 tokens at a
@@ -113,20 +115,24 @@ outcome unenforced.
 ## Enforcement
 
 `AI Review / required` becomes a required check through a ruleset, which is a setting rather
-than code, so enabling it takes no pull request. Two rules decide when it may be enabled: the
+than code, so enabling it takes no pull request. Three rules decide when it may be enabled:
+the [continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
+forbids requiring a check before it has reported under that exact name, the workflow that
+holds the provider credential must not be one the pull request can edit, as
+[Accepted temporary risk](#accepted-temporary-risk) explains, and the
 [automated pull request review standard](https://github.com/Mikode13/engineering/blob/main/standards/automated-pull-request-review.md)
-makes the first pilot blocking, with no advisory-only stage, and the
-[continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
-forbids requiring a check before it has reported under that exact name. The order is
-therefore:
+makes the pilot blocking as soon as both hold. The order is therefore:
 
 1. Merge the bootstrap pull request on `CI / required` and human review. Its own
    `AI Review / required` fails by design, because the reviewer is read from the base revision
    and the base does not carry it yet.
 2. Open the first end-to-end case. It is the first review run from a trusted base, and its
    `AI Review / required` must succeed before anything requires it.
-3. Update the standard's provider paragraph to describe `harness-cli`.
-4. Require `AI Review / required`, then run the remaining pilot cases under the blocking gate.
+3. Merge the standard update that describes `harness-cli` and these enforcement rules,
+   [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41).
+4. Load the workflow that receives the provider credential and reports the check from a
+   trusted revision.
+5. Require `AI Review / required`, then run the remaining pilot cases under the blocking gate.
 
 Neither organization ruleset has a bypass actor, so requiring the check before step 1 would
 leave the bootstrap pull request unmergeable.
@@ -201,6 +207,12 @@ without spending quota or waiting on a real run.
 | Provider failure or exhausted quota            | `incomplete`                                |
 | Passing test that does not prove the behaviour | `blocked`                                   |
 
+The rules that decide merge authority without the provider also have focused tests in
+[`.github/ai-review/tests`](../.github/ai-review/tests), run by the `Reviewer tests` job and
+locally with `pnpm run test:ai-review`. They use the Node.js test runner rather than Vitest,
+because they test temporary pilot tooling and must not stand in for the test suite that
+`src/` still lacks by design.
+
 [Mikode13/engineering#28](https://github.com/Mikode13/engineering/issues/28) also asks for
 fixed passes to be compared against risk-routed depth on the same cases. `REVIEW_MODEL` and
 `REVIEW_EFFORT` are workflow-level settings so that comparison changes one variable at a time.
@@ -237,17 +249,36 @@ pre-pilot revision is
 Removing or disabling the workflow must not leave `AI Review / required` configured as a
 required check nothing can satisfy.
 
+## Accepted temporary risk
+
+Under `pull_request`, GitHub reads the workflow file from the pull request head. The reviewer's
+scripts come from the base revision, but the workflow that calls them does not, and that
+workflow hands `CLAUDE_CODE_OAUTH_TOKEN` to `Analyze`. A branch can therefore edit it to
+exfiltrate the token, or to report a passing `AI Review / required` without a review.
+
+A fork cannot: it receives no secret, and its check fails. Anyone who can push a branch to this
+repository can, and that includes the agents that implement changes here. The pilot accepts
+the risk only while all of these hold:
+
+- the maintainer has accepted it explicitly on the bootstrap pull request;
+- only trusted maintainers and their agents push branches to this repository; and
+- `AI Review / required` is not a required check.
+
+Before the check is required, and before promotion, the workflow that receives the provider
+credential and reports the check must be loaded from a trusted revision, without running code
+or configuration from the head. Either a ruleset rule that requires a pinned workflow, or a
+workflow that GitHub loads from the base revision, satisfies that; `pull_request_target` does
+the latter but hands secrets to forks as well, so it needs its own fork boundary. A pinned
+central caller alone does not, because the caller is also read from the head.
+
 ## Known limitations
 
 - A pull request from a fork is not reviewed. It receives no provider secret, so `Analyze`
   skips it and `AI Review / required` fails; the gate assumes same-repository branches for the
   duration of the pilot.
-- Under `pull_request`, GitHub reads the workflow file itself from the pull request head. The
-  reviewer's scripts are read from the base revision, but the workflow that calls them is not,
-  so a pull request could edit the workflow to report a passing `AI Review / required` without
-  a review, as it could for `CI / required`. Human review of workflow changes is the backstop.
-  A pinned central caller does not close this on its own, because the caller is also read from
-  the head; a ruleset rule that requires a workflow from a fixed repository and revision would.
+- A reviewed file over 40,000 bytes makes the run `incomplete`. Today that includes
+  `pnpm-lock.yaml`, so a dependency update cannot be reviewed until the file limit or the
+  handling of lockfiles changes.
 - The runner does not normalize intent. It supplies the closing issue and the description and
   asks the reviewer to resolve the change contract itself, rather than guessing which prose is
   an acceptance criterion.

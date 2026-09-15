@@ -184,9 +184,8 @@ if (!buildReport.fits) {
 	const missing = buildReport.missingEssentials ?? [];
 	errors = [
 		missing.length > 0
-			? `This change needs ${buildReport.bytes} bytes of evidence, and the ` +
-				`${buildReport.limit}-byte review budget displaced ${missing.join(' and ')}. ` +
-				'A review without that is not worth the provider call.'
+			? `Essential context could not be supplied: ${missing.join('; ')}. ` +
+				'A review without it is not worth the provider call.'
 			: `The diff and the mandatory context alone need ${buildReport.bytes} bytes, which ` +
 				`exceeds the ${buildReport.limit}-byte review budget.`,
 	];

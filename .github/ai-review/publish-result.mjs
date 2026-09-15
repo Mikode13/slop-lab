@@ -253,10 +253,13 @@ if (alreadyPublished) {
 
 appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`);
 
-// A blocking finding that reached no conversation would leave merge authority unenforced, so
-// the check fails instead of reporting a completed review that nothing acts on.
-const unenforceable = blocking.length > 0 && comments.length === 0;
-if (unenforceable) console.log('A blocking finding could not be published as a conversation.');
+// Every blocking finding needs a conversation that someone has to resolve. One that reached
+// none would leave part of the merge authority unenforced, so the check fails even when other
+// blocking findings were published.
+const unenforceable = unanchored.length > 0;
+if (unenforceable) {
+	console.log(`${unanchored.length} blocking finding(s) could not be published as a conversation.`);
+}
 
 console.log(`Outcome: ${report.outcome}.`);
 process.exit(report.outcome === 'incomplete' || unenforceable ? 1 : 0);
