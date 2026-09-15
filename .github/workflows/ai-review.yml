@@ -197,16 +197,21 @@ jobs:
     name: AI Review / required
     needs:
       - analyze
-    if: >-
-      always() &&
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
+    # GitHub counts a job skipped by its condition as a passing required check, so only a draft,
+    # which cannot merge, may skip. Anything else that cannot be reviewed fails instead.
+    if: always() && github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: Refuse a pull request from a fork
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "A pull request from a fork receives no provider credential, so it cannot be reviewed during the pilot."
+          exit 1
+
       - name: Check out the trusted publisher
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.0
         with:

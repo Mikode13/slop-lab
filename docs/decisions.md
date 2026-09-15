@@ -137,3 +137,27 @@ bootstrap fits whole.
 matter for unusually large pull requests; it turned out to bind on the smallest real one and to
 exclude an ordinary one. Removing it where it lived took one small release, while designing
 around it would have shaped every later review.
+
+## Fail the review gate instead of skipping it
+
+**Decision.** `AI Review / required` fails for every pull request that could merge without a
+review: when the base revision carries no reviewer, when the pull request comes from a fork,
+and when analysis did not succeed. Only a draft skips. The check is required through a ruleset
+of its own, and only after it has reported successfully once.
+
+**Context.** GitHub reports a job skipped by its condition as successful, and a skipped
+required check does not block a merge. The first version of the workflow skipped fork pull
+requests on the assumption that the check would then never report; it would have reported
+success instead. The bootstrap pull request raised the opposite question, whether a check
+that cannot run yet should skip rather than fail.
+
+**Consequences.** The bootstrap pull request merges with a failing, not yet required,
+`AI Review / required`, and the check becomes required only afterwards, in a ruleset that
+targets this repository alone, because the shared `required-ci` ruleset would make every other
+repository wait for a check nothing reports. Removing the reviewer from `main` blocks later
+pull requests instead of silently disabling the gate. An exceptional merge past an
+`incomplete` review goes through a pull-request-only bypass, which the standard allows with a
+recorded reason, instead of an edit to the ruleset.
+
+**Lesson.** On a required check, skipped means passed. A condition that skips a gate opens it,
+so every path that cannot produce a review has to fail.

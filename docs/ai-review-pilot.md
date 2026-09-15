@@ -110,6 +110,56 @@ not succeed all produce `incomplete`. A blocking finding that cannot be anchored
 in the diff also fails the check, because a conversation nobody has to resolve would leave the
 outcome unenforced.
 
+## Enforcement
+
+`AI Review / required` becomes a required check through a ruleset, which is a setting rather
+than code, so enabling it takes no pull request. Two rules decide when it may be enabled: the
+[automated pull request review standard](https://github.com/Mikode13/engineering/blob/main/standards/automated-pull-request-review.md)
+makes the first pilot blocking, with no advisory-only stage, and the
+[continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
+forbids requiring a check before it has reported under that exact name. The order is
+therefore:
+
+1. Merge the bootstrap pull request on `CI / required` and human review. Its own
+   `AI Review / required` fails by design, because the reviewer is read from the base revision
+   and the base does not carry it yet.
+2. Open the first end-to-end case. It is the first review run from a trusted base, and its
+   `AI Review / required` must succeed before anything requires it.
+3. Update the standard's provider paragraph to describe `harness-cli`.
+4. Require `AI Review / required`, then run the remaining pilot cases under the blocking gate.
+
+Neither organization ruleset has a bypass actor, so requiring the check before step 1 would
+leave the bootstrap pull request unmergeable.
+
+The check belongs in a ruleset of its own:
+
+| Setting                 | Value                                               |
+| ----------------------- | --------------------------------------------------- |
+| Target                  | `slop-lab`, default branch                          |
+| Rule                    | Require the status check `AI Review / required`     |
+| Bypass                  | Organization administrators, for pull requests only |
+| Conversation resolution | Already required by the `main-baseline` ruleset     |
+
+Do not add the check to `required-ci`. That organization ruleset is shared with repositories
+that have no workflow reporting `AI Review / required`, and every pull request there would
+wait for it indefinitely. A separate organization ruleset whose target grows as repositories
+adopt the central reviewer follows the way `required-ci` grows with CI adoption.
+
+The bypass exists because the standard lets an authorized maintainer merge past an
+`incomplete` review for an exceptional need, recording the reason, the reviewed head commit,
+and the person accepting the risk in the pull request. A pull-request-only bypass keeps that a
+decision about one merge. Without it, the only way past a provider outage is to edit the
+ruleset, which turns the gate off for every other pull request at the same time.
+
+GitHub reports a job skipped by its condition as successful, and a skipped required check does
+not block a merge. The workflow therefore never skips its way past the gate:
+
+- a base revision without the reviewer or the publisher fails the check, so removing the
+  reviewer from `main` blocks later pull requests instead of quietly turning the gate off;
+- a pull request from a fork fails the check, because it receives no provider secret and
+  cannot be reviewed; and
+- only a draft skips, because a draft cannot merge and marking it ready starts a new review.
+
 ## Credential setup
 
 The workflow expects a repository Actions secret named `CLAUDE_CODE_OAUTH_TOKEN`. Generate it
@@ -171,13 +221,17 @@ Promote only after roughly ten to twelve controlled executions show:
 - a projected monthly cost within the EUR 30 ceiling; and
 - a measurable difference between candidates raised and findings confirmed after verification.
 
-Promotion moves the workflow, the runner, the contract validator, the publisher, and fixtures
-to `Mikode13/.github` as the reusable workflow required by
-[Mikode13/engineering#27](https://github.com/Mikode13/engineering/issues/27), replaces this
-implementation with a caller pinned to a full commit SHA, and repeats the same cases to confirm
-the results do not change. That pinned SHA is the rollback target afterwards.
+Promotion takes two pull requests. The first moves the workflow, the runner, the contract
+validator, the publisher, and fixtures to `Mikode13/.github` as the reusable workflow required
+by [Mikode13/engineering#27](https://github.com/Mikode13/engineering/issues/27). The second
+replaces this implementation with a caller pinned to that full commit SHA, after which the
+same cases are repeated to confirm the results do not change. The caller job is named
+`AI Review` and the reusable job `required`, so GitHub keeps reporting `AI Review / required`
+and the ruleset does not change. From then on, as with CI, a reviewer update reaches this
+repository as a reviewed pull request that bumps the pinned SHA, and the previous SHA is the
+rollback target.
 
-Until then, rollback means removing the pilot workflow and its ruleset entry together. The
+Until then, rollback means removing the pilot workflow and its ruleset together. The
 pre-pilot revision is
 [`db58dfd`](https://github.com/Mikode13/slop-lab/commit/db58dfd9eef6855548f0fee2be3d8a30b6907c3a).
 Removing or disabling the workflow must not leave `AI Review / required` configured as a
@@ -185,12 +239,15 @@ required check nothing can satisfy.
 
 ## Known limitations
 
-- A pull request from a fork gets no review: it receives no secret, and the jobs skip it. The
-  required check would therefore never report, so the gate assumes same-repository branches for
-  the duration of the pilot.
+- A pull request from a fork is not reviewed. It receives no provider secret, so `Analyze`
+  skips it and `AI Review / required` fails; the gate assumes same-repository branches for the
+  duration of the pilot.
 - Under `pull_request`, GitHub reads the workflow file itself from the pull request head. The
-  reviewer's scripts are read from the base revision, but the workflow that calls them is not.
-  Moving to the central reusable workflow with a pinned caller closes this.
+  reviewer's scripts are read from the base revision, but the workflow that calls them is not,
+  so a pull request could edit the workflow to report a passing `AI Review / required` without
+  a review, as it could for `CI / required`. Human review of workflow changes is the backstop.
+  A pinned central caller does not close this on its own, because the caller is also read from
+  the head; a ruleset rule that requires a workflow from a fixed repository and revision would.
 - The runner does not normalize intent. It supplies the closing issue and the description and
   asks the reviewer to resolve the change contract itself, rather than guessing which prose is
   an acceptance criterion.
