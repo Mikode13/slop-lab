@@ -77,14 +77,18 @@ const blockedResult = findings => ({
 	follow_up: [],
 });
 
-/** Runs the publisher on a valid blocked result and returns its exit status and posted review. */
-function publish(findings) {
+/**
+ * Runs the publisher on a valid blocked result, with `reviews` already on the pull request, and
+ * returns its exit status and posted review.
+ */
+function publish(findings, { reviews = [] } = {}) {
 	const result = blockedResult(findings);
 	assert.deepEqual(validateResult(result, { repository, base, head }).errors, []);
 
 	const directory = mkdtempSync(join(tmpdir(), 'ai-review-publish-'));
 	const posted = join(directory, 'posted.json');
 	writeFileSync(join(directory, 'change.diff'), diff);
+	writeFileSync(join(directory, 'reviews.json'), JSON.stringify(reviews));
 
 	const run = spawnSync(process.execPath, ['--import', stub, publisher], {
 		encoding: 'utf8',
@@ -100,6 +104,7 @@ function publish(findings) {
 			REPOSITORY: repository,
 			STUB_DIFF: join(directory, 'change.diff'),
 			STUB_POSTED: posted,
+			STUB_REVIEWS: join(directory, 'reviews.json'),
 		},
 	});
 
@@ -124,4 +129,38 @@ test('a blocking finding without a diff position fails the check even when anoth
 	assert.equal(review.comments.length, 1);
 	assert.match(review.body, /Blocking findings without a diff position/u);
 	assert.match(stdout, /1 blocking finding\(s\) could not be published as a conversation/u);
+});
+
+const bot = { login: 'github-actions[bot]' };
+
+test('a retry after an incomplete review publishes its conversations', () => {
+	const earlier = {
+		user: bot,
+		body: `<!-- mikode-ai-review:${head} -->\n## AI review: incomplete`,
+	};
+	const { status, review } = publish([blockingFinding('F1', 'src/changed.js', 2)], {
+		reviews: [earlier],
+	});
+
+	assert.equal(status, 0);
+	assert.equal(review.comments.length, 1);
+});
+
+test('a repeated delivery of the same report is not published twice', () => {
+	const findings = [blockingFinding('F1', 'src/changed.js', 2)];
+	const first = publish(findings);
+	const repeated = publish(findings, { reviews: [{ user: bot, body: first.review.body }] });
+
+	assert.equal(repeated.status, 0);
+	assert.equal(repeated.review, null);
+});
+
+test('a copy of the report posted by anyone else does not stop the publication', () => {
+	const findings = [blockingFinding('F1', 'src/changed.js', 2)];
+	const first = publish(findings);
+	const copy = { user: { login: 'someone' }, body: first.review.body };
+	const { status, review } = publish(findings, { reviews: [copy] });
+
+	assert.equal(status, 0);
+	assert.equal(review.comments.length, 1);
 });
