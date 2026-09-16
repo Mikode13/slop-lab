@@ -97,8 +97,9 @@ credential stays in a read-only analysis job and publication happens separately,
 publishing job re-deriving the whole result contract before it acts on what analysis handed
 it. A result that cannot be validated, is bound to another commit, or never arrived is
 `incomplete` and fails the check; a completed review that found a blocking problem passes the
-check and blocks the merge through unresolved conversations instead. Promotion must preserve
-that behavior, add the reusable contract and fixtures the central repository requires, and
+check and blocks the merge through unresolved conversations instead. (Superseded: since "Hold
+the merge only for blockers and recheck earlier findings", a `BLOCKER` fails the check.)
+Promotion must preserve that behavior, add the reusable contract and fixtures the central repository requires, and
 delete the local implementation rather than let two reviewers drift.
 
 **Lesson.** A central workflow is cheaper to trust when its provider and publication
@@ -158,7 +159,9 @@ because the shared `required-ci` ruleset would make every other repository wait 
 that never comes. Removing the reviewer from `main` fails later reviews instead of silently
 passing them. An exceptional merge past an
 `incomplete` review goes through a pull-request-only bypass, which the standard allows with a
-recorded reason, instead of an edit to the ruleset.
+recorded reason, instead of an edit to the ruleset. (Since "Hold the merge only for blockers
+and recheck earlier findings", the same bypass covers `blocked`, and only organization owners
+hold it.)
 
 **Lesson.** On a required check, skipped means passed. A condition that skips a gate opens it,
 so every path that cannot produce a review has to fail.
@@ -189,3 +192,31 @@ therefore measures the review with its status reported but not required.
 trusting the workflow is not the same as trusting every workflow a branch can add. The boundary
 has to include the secret and the name of the check, and the cheapest way to close each part
 can differ.
+
+## Hold the merge only for blockers and recheck earlier findings
+
+**Decision.** Severity follows harm, and only a `BLOCKER` fails `AI Review / required`,
+whether or not the change introduced it. Every `SHOULD FIX` and `SUGGESTION` of the change is
+a comment on its line whose conversation holds the merge until a person resolves it: a
+`SHOULD FIX` only with a code change or an issue, a `SUGGESTION` once read. Findings unrelated
+to the change are listed for triage in one summary comment that later reviews update in place.
+A later review rechecks every finding earlier reviews published, and only organization owners
+may merge past `blocked` or `incomplete`.
+
+**Context.** The first real reviews, on pull requests 5 and 6, were correct but hard to act on.
+Their summaries repeated every perspective and every finding's reasoning. Merge authority
+followed origin, so an ordinary introduced bug blocked like an exploit while a pre-existing
+exploit never could. Each new commit started a review that remembered nothing, and a finding
+the model did not happen to find again would have looked fixed. Mikode13/skills 1.0.1 and
+Mikode13/engineering#41 settled the new rules before this implementation.
+
+**Consequences.** The publisher never resolves or deletes a conversation. It answers in one
+when its finding looks fixed or has moved, and reopens a resolved suggestion once if the same
+defect is found again as a `SHOULD FIX` or `BLOCKER`. Earlier findings travel back to the
+reviewer as data, and one it cannot decide makes the review `incomplete` when it is or may be
+a `BLOCKER`. A ruleset bypass cannot tell `blocked` from `incomplete`, so both belong to the
+owners. Promotion must carry these rules, not the ones the first pilot entry describes.
+
+**Lesson.** A review gate earns trust when it reads like a colleague's review: severity by
+harm, comments where the code is, and a memory of what it already said. Asking whether a
+named problem still exists is more reliable than hoping the model finds it again.
