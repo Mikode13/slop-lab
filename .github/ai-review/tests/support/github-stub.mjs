@@ -3,6 +3,9 @@
  * reaches GitHub or needs a token. It serves the diff in STUB_DIFF, the review threads in
  * STUB_THREADS as GraphQL returns them, and the pull request comments in STUB_COMMENTS, and it
  * appends every write, including any GraphQL mutation, to the JSON array in STUB_WRITES.
+ *
+ * Like GitHub, it lists a thread for each comment of a review posted during the run, unless
+ * STUB_HIDE_POSTED_THREADS is set, and resolving or reopening a thread changes what it lists.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -13,6 +16,7 @@ const load = (variable, fallback) =>
 		: fallback;
 
 const threads = load('STUB_THREADS', []);
+const postedThreads = [];
 const comments = load('STUB_COMMENTS', []);
 
 const reply = body => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
@@ -29,18 +33,38 @@ globalThis.fetch = (url, options = {}) => {
 
 	if (method === 'POST' && pathname === '/graphql') {
 		const { query, variables } = JSON.parse(options.body);
+		const listed = [...threads, ...(process.env.STUB_HIDE_POSTED_THREADS ? [] : postedThreads)];
 		if (query.includes('mutation')) {
 			record(method, pathname, { query, variables });
+			const thread = listed.find(item => item.id === variables.id);
+			if (thread)
+				thread.isResolved = query.includes('resolveReviewThread(') && !query.includes('unresolve');
 			return reply({ data: {} });
 		}
 		const start = Number(variables.after ?? 0);
-		const nodes = threads.slice(start, start + Number(process.env.STUB_THREAD_PAGE_SIZE ?? 50));
+		const nodes = listed.slice(start, start + Number(process.env.STUB_THREAD_PAGE_SIZE ?? 50));
 		const end = start + nodes.length;
-		const pageInfo = { hasNextPage: end < threads.length, endCursor: String(end) };
+		const pageInfo = { hasNextPage: end < listed.length, endCursor: String(end) };
 		return reply({ data: { repository: { pullRequest: { reviewThreads: { pageInfo, nodes } } } } });
 	}
 	if (method !== 'GET') {
-		record(method, pathname, JSON.parse(options.body));
+		const body = JSON.parse(options.body);
+		record(method, pathname, body);
+		if (pathname.endsWith('/reviews')) {
+			for (const comment of body.comments) {
+				const index = postedThreads.length;
+				postedThreads.push({
+					id: `posted-${index}`,
+					isResolved: false,
+					isOutdated: false,
+					comments: {
+						nodes: [
+							{ databaseId: 900 + index, body: comment.body, author: { login: 'github-actions' } },
+						],
+					},
+				});
+			}
+		}
 		return reply({
 			id: 99,
 			html_url: 'https://github.com/Mikode13/slop-lab/pull/7#issuecomment-99',

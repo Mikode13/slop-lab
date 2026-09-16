@@ -7,14 +7,17 @@
  * output as data: it re-runs contract validation before believing an outcome, and it
  * neutralizes every string it renders.
  *
- * Only a `BLOCKER` holds the merge back, through the `AI Review / required` status the workflow
- * reports from this job's outcome; `incomplete` fails that status too. `SHOULD FIX` and
- * `SUGGESTION` findings of the change open conversations for a person to close, and findings
- * unrelated to the change are listed in the summary for a maintainer to triage.
+ * A `BLOCKER` fails the `AI Review / required` status the workflow reports from this job's
+ * outcome, and so does `incomplete`. A `SHOULD FIX` of the change opens a conversation, which
+ * the ruleset's conversation resolution makes block the merge until a person resolves it. A
+ * `SUGGESTION` of the change is commented the same way and resolved as soon as it is posted, so
+ * it can be ignored. Findings unrelated to the change are listed in the summary for a maintainer
+ * to triage.
  *
- * A later review rechecks what earlier ones found. This job never closes or deletes a
- * conversation: it answers in it when the finding looks fixed or has moved, and closing it stays
- * a person's decision. Every write is identified by the finding's key, so publishing the same
+ * A later review rechecks what earlier ones found. Apart from resolving its own suggestions,
+ * this job never resolves or deletes a conversation: it answers in it when the finding looks
+ * fixed or has moved, and resolving it stays a person's decision. The one conversation it
+ * reopens is a suggestion's, when a later review finds the same defect is worse. Every write is identified by the finding's key, so publishing the same
  * report again posts nothing twice.
  */
 
@@ -26,6 +29,7 @@ import {
 	createGitHub,
 	marker,
 	readReviewState,
+	readThreads,
 	summaryMarker,
 	toEarlierFinding,
 } from './review-state.mjs';
@@ -131,11 +135,23 @@ const compact = finding =>
 
 // What the author is expected to do with the conversation, by severity.
 const closing = {
-	BLOCKER: 'This blocks the merge while a review still finds it.',
+	BLOCKER: 'This fails `AI Review / required` while a review still finds it.',
 	'SHOULD FIX':
-		'Fix it, or close this conversation with a link to an issue or the reason it can wait.',
-	SUGGESTION: 'Optional. Close this conversation once you have read it.',
+		'This conversation blocks the merge until it is resolved: fix it, or resolve it with a ' +
+		'link to an issue or the reason it can wait.',
+	SUGGESTION:
+		'Optional, so this conversation was resolved when it was posted. Reopen it to discuss it.',
 };
+
+/**
+ * Whether a resolved conversation is a suggestion's that has to hold the merge again: its
+ * finding was last published as a `SUGGESTION` and is now worse. The severity the
+ * conversation last stated is compared, so a person who resolves it again is not overruled.
+ */
+const escalated = (thread, finding) =>
+	thread.isResolved &&
+	finding.severity !== 'SUGGESTION' &&
+	(thread.last?.severity ?? thread.finding.severity) === 'SUGGESTION';
 
 const reasoning = (finding, followUp) => [
 	`${sanitize(finding.problem)} ${sanitize(finding.consequence)}`,
@@ -170,6 +186,9 @@ const emptyPlan = ledger => ({
 	incidental: [],
 	fixed: [],
 	undetermined: [],
+	resolve: [],
+	reopen: [],
+	unresolvedSuggestions: 0,
 	ledger,
 	followUp: { byFinding: new Map(), general: [] },
 });
@@ -205,7 +224,10 @@ function plan(result, earlierFindings, state, lines) {
 		const key = keys.find(candidate => threads.has(candidate)) ?? keys[0];
 		const thread = threads.get(key);
 		const items = planned.followUp.byFinding.get(finding.id) ?? [];
-		let conversation = thread ? (thread.isResolved ? 'closed' : 'open') : null;
+		let conversation = null;
+		if (thread) {
+			conversation = thread.isResolved && !escalated(thread, finding) ? 'closed' : 'open';
+		}
 
 		const position = positionOf(finding.location, lines);
 		if (!thread && position && (finding.blocking || finding.relevance === 'change')) {
@@ -215,6 +237,7 @@ function plan(result, earlierFindings, state, lines) {
 				side: 'RIGHT',
 				body: findingComment(finding, key, items, position.wholeFile),
 			});
+			if (finding.severity === 'SUGGESTION') planned.resolve.push(key);
 			conversation = 'new';
 		}
 		if (conversation === null) planned.ledger.push(earlierEntry(finding, key));
@@ -240,6 +263,19 @@ function plan(result, earlierFindings, state, lines) {
 			if (recheck.status === 'fixed') planned.fixed.push({ finding, recheck });
 			continue;
 		}
+		const current = findings.get(recheck.finding_id);
+		if (recheck.status === 'present' && escalated(thread, current)) {
+			const now = where(current.location);
+			planned.reopen.push(thread);
+			planned.replies.push({
+				thread,
+				body:
+					`Now ${current.severity} in ${commit}, at \`${sanitize(now)}\`: ${sanitize(recheck.reason)} ` +
+					`${closing[current.severity] ?? closing['SHOULD FIX']}\n` +
+					marker('recheck', { status: 'present', where: now, severity: current.severity }),
+			});
+			continue;
+		}
 		if (thread.isResolved) continue;
 
 		// Say something only when it changes what the conversation already states: that the
@@ -255,14 +291,14 @@ function plan(result, earlierFindings, state, lines) {
 			});
 			continue;
 		}
-		const now = where(findings.get(recheck.finding_id).location);
+		const now = where(current.location);
 		const moved = thread.isOutdated && last.where !== now;
 		if (last.status === 'present' && !moved) continue;
 		planned.replies.push({
 			thread,
 			body:
 				`Still present in ${commit}, at \`${sanitize(now)}\`: ${sanitize(recheck.reason)}\n` +
-				marker('recheck', { status: 'present', where: now }),
+				marker('recheck', { status: 'present', where: now, severity: current.severity }),
 		});
 	}
 
@@ -297,12 +333,13 @@ function verdict(report, planned) {
 			return [`Not ready to merge: ${planned.blocking.length} blocking finding(s).`];
 		case 'concerns':
 			return [
-				'No blocking findings. Fix each `SHOULD FIX`, or close its conversation with an issue ' +
-					'or a reason.',
+				'No blocking findings. Each `SHOULD FIX` conversation blocks the merge until it is ' +
+					'resolved: fix it, or resolve it with an issue or a reason.',
 			];
 		case 'suggestions':
 			return [
-				'No blocking findings, only suggestions. Close each conversation once you have read it.',
+				'No blocking findings, only suggestions. Their conversations are already resolved, so ' +
+					'nothing holds the merge.',
 			];
 		default:
 			return ['Nothing to change was found in this pull request.'];
@@ -327,6 +364,13 @@ function renderSummary(report, planned) {
 		`## AI review: ${report.outcome}`,
 		'',
 		...verdict(report, planned),
+		...(planned.unresolvedSuggestions > 0
+			? [
+					'',
+					`${planned.unresolvedSuggestions} suggestion comment(s) could not be resolved ` +
+						'automatically, so they hold the merge until someone resolves them.',
+				]
+			: []),
 		...section('Blocking', planned.blocking.map(blocking)),
 		...section('Not on a line of the diff', planned.withoutLine.map(full)),
 		...section(
@@ -462,8 +506,6 @@ if (report.valid) {
 	planned = plan(report.result, earlierFindings, state, lines);
 }
 
-const body = renderSummary(report, planned);
-
 // Conversations first and the summary last: a run cancelled in between leaves every finding
 // either in a conversation or in the previous summary's ledger, so the next review still
 // rechecks it.
@@ -489,6 +531,44 @@ console.log(
 	`Posted ${planned.comments.length} new comment(s) and ${planned.replies.length} ` +
 		`reply(ies) for ${headSha}.`,
 );
+
+for (const thread of planned.reopen) {
+	await github.graphql(
+		'mutation ($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id } } }',
+		{ id: thread.id },
+	);
+}
+
+// A suggestion must not hold the merge, so each one posted above is resolved. GitHub can take a
+// moment to list a new review's threads, so they are looked up a few times; only threads this
+// run opened are touched, never one a person reopened.
+const retryDelay = Number(process.env.THREAD_RETRY_DELAY_MS ?? 3000);
+const pending = new Set(planned.resolve);
+for (let attempt = 1; attempt <= 3 && pending.size > 0; attempt += 1) {
+	if (attempt > 1) await new Promise(resolve => setTimeout(resolve, retryDelay));
+	try {
+		const threads = await readThreads(github, repository, Number(pullNumber));
+		for (const thread of threads.filter(item => pending.has(item.finding.key))) {
+			if (!thread.isResolved) {
+				await github.graphql(
+					'mutation ($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id } } }',
+					{ id: thread.id },
+				);
+			}
+			pending.delete(thread.finding.key);
+		}
+	} catch (error) {
+		console.log(
+			`Resolving suggestions failed: ${sanitize(error instanceof Error ? error.message : error)}`,
+		);
+	}
+}
+planned.unresolvedSuggestions = pending.size;
+console.log(
+	`Resolved ${planned.resolve.length - pending.size} of ${planned.resolve.length} suggestion comment(s).`,
+);
+
+const body = renderSummary(report, planned);
 
 if (state.summary === null) {
 	const created = await github.request(`/repos/${repository}/issues/${pullNumber}/comments`, {

@@ -147,6 +147,7 @@ function run(script, { threads = [], comments = [], env = {} } = {}) {
 			STUB_DIFF: file('change.diff'),
 			STUB_THREADS: file('threads.json'),
 			STUB_WRITES: file('writes.json'),
+			THREAD_RETRY_DELAY_MS: '0',
 			...env,
 		},
 	});
@@ -195,6 +196,9 @@ function publish(result, { earlier = [], report = {}, threads, comments, env } =
 		review: writes(/\/pulls\/7\/reviews$/u)[0]?.body ?? null,
 		summary: writes(/\/issues\/(?:7|comments\/5)/u)[0] ?? null,
 		replies: writes(/\/replies$/u).map(write => write.body.body),
+		mutations: writes(/^\/graphql$/u).map(
+			write => `${/(\w+)ReviewThread/u.exec(write.body.query)[1]} ${write.body.variables.id}`,
+		),
 	};
 }
 
@@ -214,34 +218,55 @@ test('a BLOCKER is commented on its line, named in the summary, and fails the ch
 	assert.equal(status, 1);
 	assert.match(outputs, /outcome=blocked\npublished=true/u);
 	assert.equal(review.comments[0].line, 2);
-	assert.match(review.comments[0].body, /This blocks the merge while a review still finds it\./u);
+	assert.match(
+		review.comments[0].body,
+		/This fails `AI Review \/ required` while a review still finds it\./u,
+	);
 	assert.match(summary.body.body, /Not ready to merge: 1 blocking finding\(s\)\./u);
 	assert.match(summary.body.body, /- \*\*\[BLOCKER\] Finding F1\*\* \(`src\/changed\.js:2`\)$/mu);
 	assert.doesNotMatch(summary.body.body, /Problem F1/u);
 });
 
-test('a SHOULD FIX of the change opens a conversation to fix or close with a reason, and passes', () => {
-	const { status, outputs, review } = publish(resultWith([finding('F1')]));
+test('a SHOULD FIX of the change passes the check but leaves a conversation that holds the merge', () => {
+	const { status, outputs, review, mutations } = publish(resultWith([finding('F1')]));
 
 	assert.equal(status, 0);
 	assert.match(outputs, /outcome=concerns/u);
 	assert.match(review.comments[0].body, /Problem F1\. Consequence F1\.\n\nDirection F1\./u);
 	assert.match(
 		review.comments[0].body,
-		/Fix it, or close this conversation with a link to an issue or the reason it can wait\./u,
+		/This conversation blocks the merge until it is resolved: fix it, or resolve it with a link to an issue or the reason it can wait\./u,
 	);
+	assert.deepEqual(mutations, []);
 });
 
-test('a SUGGESTION of the change opens a conversation that can be closed once read', () => {
-	const { status, outputs, review } = publish(
-		resultWith([finding('F1', { severity: 'SUGGESTION' })]),
+test('a SUGGESTION of the change is commented and resolved at once, so it can be ignored', () => {
+	const { status, outputs, review, summary, mutations } = publish(
+		resultWith([finding('F1', { severity: 'SUGGESTION' }), finding('F2', at('src/changed.js', 3))]),
 	);
 
 	assert.equal(status, 0);
-	assert.match(outputs, /outcome=suggestions/u);
+	assert.match(outputs, /outcome=concerns/u);
+	assert.equal(review.comments.length, 2);
 	assert.match(
 		review.comments[0].body,
-		/Optional\. Close this conversation once you have read it\./u,
+		/Optional, so this conversation was resolved when it was posted\./u,
+	);
+	assert.deepEqual(mutations, ['resolve posted-0']);
+	assert.doesNotMatch(summary.body.body, /could not be resolved/u);
+});
+
+test('a SUGGESTION comment GitHub does not list yet is named in the summary as still open', () => {
+	const { status, summary, mutations } = publish(
+		resultWith([finding('F1', { severity: 'SUGGESTION' })]),
+		{ env: { STUB_HIDE_POSTED_THREADS: '1' } },
+	);
+
+	assert.equal(status, 0);
+	assert.deepEqual(mutations, []);
+	assert.match(
+		summary.body.body,
+		/1 suggestion comment\(s\) could not be resolved automatically, so they hold the merge until someone resolves them\./u,
 	);
 });
 
@@ -401,6 +426,33 @@ test('an earlier finding that looks fixed is answered, and its conversation is l
 		comments: first.comments,
 	});
 	assert.deepEqual(closed.replies, []);
+});
+
+test('a suggestion found again as a SHOULD FIX reopens its conversation once', () => {
+	const first = published(resultWith([finding('F1', { severity: 'SUGGESTION' })]));
+	const { earlier, fields } = earlierReview(first).recheck('present', 'F7');
+	const worse = resultWith([finding('F7')], fields);
+
+	const again = publish(worse, {
+		earlier,
+		threads: first.threads({ isResolved: true }),
+		comments: first.comments,
+	});
+	assert.equal(again.review, null);
+	assert.deepEqual(again.mutations, ['unresolve thread-0']);
+	assert.equal(again.replies.length, 1);
+	assert.match(
+		again.replies[0],
+		/^Now SHOULD FIX in bbbbbbb, at `src\/changed\.js:2`: It is present\. This conversation blocks the merge until it is resolved/u,
+	);
+
+	const resolvedByAPerson = publish(worse, {
+		earlier,
+		threads: first.threads({ isResolved: true, replies: again.replies }),
+		comments: first.comments,
+	});
+	assert.deepEqual(resolvedByAPerson.mutations, []);
+	assert.deepEqual(resolvedByAPerson.replies, []);
 });
 
 test('a BLOCKER whose conversation was closed still blocks, and the summary says so', () => {

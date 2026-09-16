@@ -126,11 +126,13 @@ so it fails the check whether or not the change introduced it.
 | `clean`       | `AI Review / required` succeeds | Nothing to change, though findings outside the change may be listed |
 | `incomplete`  | `AI Review / required` fails    | No review that can be trusted; the gate blocks until one completes  |
 
-A `SHOULD FIX` or a `SUGGESTION` of the change opens a conversation, and the `main-baseline`
-ruleset requires every conversation to be resolved before a merge, so each one is read without
-failing the check. Closing a conversation records a decision. A `SHOULD FIX` is closed after
-fixing it, or with a link to an issue or the reason it can wait, and a `SUGGESTION` can be
-closed once read. Nothing checks that reason yet.
+A `SHOULD FIX` of the change opens a conversation, and the `main-baseline` ruleset requires
+every conversation to be resolved before a merge, so it holds the merge until a person resolves
+it: after fixing it, or with a link to an issue or the reason it can wait. Nothing checks that
+reason yet. A `SUGGESTION` of the change is commented the same way but resolved as soon as it
+is posted, so it stays folded on its line, holds nothing back, and can be ignored or reopened to
+discuss it. If GitHub does not list a new comment in time for it to be resolved, the summary
+says so.
 
 A provider failure, a timeout, a reply that fails contract validation twice, a result bound to
 another commit, a result too large to hand between jobs, an analysis job that did not succeed,
@@ -173,7 +175,8 @@ fixed:
 
 - **Still present:** no new comment. If the commented code moved, one reply in the open
   conversation says where it is now. A `BLOCKER` whose conversation was closed still blocks,
-  and the summary says so.
+  and the summary says so. A suggestion found again as a `SHOULD FIX` or `BLOCKER` has its
+  conversation reopened once, with a reply that says so.
 - **Looks fixed:** one reply in an open conversation says why, and the conversation stays open
   for a person to close. A finding without a conversation is named in the summary once, then
   dropped.
@@ -181,8 +184,9 @@ fixed:
   or an earlier finding that never had a severity, that cannot be decided makes the review
   `incomplete`.
 
-The publisher never closes, reopens, or deletes a conversation. Whether a conversation was
-closed is not given to the reviewer either: it is a decision about the pull request, not
+Apart from resolving its own suggestions and reopening one that got worse, the publisher never
+resolves, reopens, or deletes a conversation. Whether a conversation was closed is not given to
+the reviewer either: it is a decision about the pull request, not
 evidence about the code. The reviewer receives only what the earlier review wrote, fenced like
 any other reviewed content.
 
