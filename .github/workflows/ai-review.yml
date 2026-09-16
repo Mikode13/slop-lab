@@ -23,7 +23,7 @@ env:
   # The pilot is frozen on these revisions so that a result can be attributed to a reviewer,
   # not to whatever the ecosystem published that morning.
   HARNESS_PACKAGE: '@mikode13/harness-cli@1.1.0'
-  SKILL_REVISION: 8c46b0eb868538b2c93a3a95b9e3c7ec15cf7655
+  SKILL_REVISION: e62054e152ddab286f7325e8830170a22ee722d7
   REVIEW_MODEL: opus
   REVIEW_EFFORT: high
   REVIEW_TIMEOUT_SECONDS: '900'

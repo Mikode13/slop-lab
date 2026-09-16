@@ -148,11 +148,27 @@ test('every earlier finding is rechecked exactly once, and a present one points 
 	);
 });
 
-test('an earlier BLOCKER that cannot be rechecked needs a limitation, so the review is incomplete', () => {
+test('an earlier BLOCKER or unclassified finding that cannot be rechecked needs a limitation', () => {
 	const rechecks = [recheck('e1', 'undetermined'), recheck('e2', 'undetermined')];
 	assert.match(
 		errorsOf(resultWith([], { rechecks }), earlier).join(' '),
-		/leaves an earlier BLOCKER undetermined without a limitation/u,
+		/leaves an earlier BLOCKER finding undetermined without a limitation/u,
+	);
+	assert.deepEqual(
+		errorsOf(
+			resultWith([], { rechecks: [recheck('e1', 'undetermined'), recheck('e2', 'fixed')] }),
+			earlier,
+		),
+		[],
+	);
+
+	const unclassified = [{ ...earlier[0], severity: null }, earlier[1]];
+	assert.match(
+		errorsOf(
+			resultWith([], { rechecks: [recheck('e1', 'undetermined'), recheck('e2', 'fixed')] }),
+			unclassified,
+		).join(' '),
+		/leaves an earlier unclassified finding undetermined without a limitation/u,
 	);
 
 	const limited = resultWith([], {

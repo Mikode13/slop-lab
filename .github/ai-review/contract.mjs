@@ -265,8 +265,9 @@ function checkVerification(collect, result, findingIds) {
 
 /**
  * Every earlier finding the caller supplied gets exactly one recheck. A present one points at
- * the finding that describes it now; an undetermined `BLOCKER` needs a limitation, because a
- * review that cannot tell whether a blocker is gone has not finished.
+ * the finding that describes it now. An undetermined one whose severity is `BLOCKER` or was
+ * never classified needs a limitation, because a review that cannot tell whether blocking harm
+ * is gone has not finished.
  */
 function checkRechecks(collect, result, findingIds, earlier) {
 	if (!collect.check(Array.isArray(result.rechecks), 'Rechecks must be an array.')) return;
@@ -302,11 +303,12 @@ function checkRechecks(collect, result, findingIds, earlier) {
 			collect.check(recheck.finding_id === null, `${where} must not point at a finding.`);
 		}
 
+		const severity = supplied.get(recheck.key)?.severity;
 		collect.check(
 			recheck.status !== 'undetermined' ||
-				supplied.get(recheck.key)?.severity !== 'BLOCKER' ||
+				(severity !== 'BLOCKER' && severity !== null) ||
 				(Array.isArray(result.limitations) && result.limitations.length > 0),
-			`${where} leaves an earlier BLOCKER undetermined without a limitation.`,
+			`${where} leaves an earlier ${severity ?? 'unclassified'} finding undetermined without a limitation.`,
 		);
 	});
 

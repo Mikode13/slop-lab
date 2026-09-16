@@ -14,7 +14,7 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 | Choice           | Value                                                                                         |
 | ---------------- | --------------------------------------------------------------------------------------------- |
 | Reviewer command | `@mikode13/harness-cli@1.1.0`, with the prompt passed through `--prompt-file`                 |
-| Review skill     | `mikode-review` from `Mikode13/skills` at `8c46b0e`, the head of skills pull request 17       |
+| Review skill     | `mikode-review` from `Mikode13/skills` at `e62054e`, release 1.0.1                            |
 | Provider         | Claude, on a MiKode-owned account, through `CLAUDE_CODE_OAUTH_TOKEN`                          |
 | Model and effort | `opus` at `high` reasoning effort                                                             |
 | Provider timeout | 15 minutes per turn, enforced by the runner                                                   |
@@ -115,8 +115,8 @@ than designed around here.
 
 ## Outcomes
 
-Among findings, only a `BLOCKER` holds the merge back. Its severity comes from the harm it
-describes, so it blocks whether or not the change introduced it.
+Among findings, only a `BLOCKER` fails the check. Its severity comes from the harm it describes,
+so it fails the check whether or not the change introduced it.
 
 | Outcome       | Check                           | What it means                                                       |
 | ------------- | ------------------------------- | ------------------------------------------------------------------- |
@@ -177,8 +177,9 @@ fixed:
 - **Looks fixed:** one reply in an open conversation says why, and the conversation stays open
   for a person to close. A finding without a conversation is named in the summary once, then
   dropped.
-- **Cannot be decided:** named in the summary and rechecked next time. An earlier `BLOCKER`
-  that cannot be decided makes the review `incomplete`.
+- **Cannot be decided:** named in the summary and rechecked next time. An earlier `BLOCKER`,
+  or an earlier finding that never had a severity, that cannot be decided makes the review
+  `incomplete`.
 
 The publisher never closes, reopens, or deletes a conversation. Whether a conversation was
 closed is not given to the reviewer either: it is a decision about the pull request, not
@@ -221,11 +222,13 @@ not run the reviewer, and every pull request there would wait for a review that 
 separate organization ruleset whose target grows as repositories adopt the reviewer follows
 the way `required-ci` grows with CI adoption.
 
-The bypass exists because the standard lets an authorized maintainer merge past an
+The bypass exists because the standard lets an organization owner merge past a `blocked` or
 `incomplete` review for an exceptional need, recording the reason, the reviewed head commit,
-and the person accepting the risk in the pull request, and because only the owner may merge
-past a `blocked` one. A pull-request-only bypass keeps either a decision about one merge.
-Without it, the only way past a provider outage is to edit the ruleset, which turns the gate off for every other pull request at the same time. It also
+and the person accepting the risk in the pull request. A ruleset bypass cannot tell why the
+check failed, so only organization administrators hold it, and only for pull requests, which
+keeps each exception a decision about one merge. Without it, the only way past a provider
+outage is to edit the ruleset, which turns the gate off for every other pull request at the
+same time. It also
 covers the first run of the required workflow, which only the rule itself starts: the
 [continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
 forbids requiring a check before it has reported, and here the rule is what makes it report.
@@ -242,8 +245,11 @@ not block a merge. The workflow therefore never skips its way past the gate:
 A workflow that a ruleset requires behaves differently in two ways the promoted version must
 handle. GitHub runs it only for the default activity types, `opened`, `synchronize`, and
 `reopened`, so marking a draft ready does not start it again, and it must fail for a draft
-instead of skipping it. And it must not use `cancel-in-progress`, so a superseded run has to
-stop itself instead of being cancelled.
+instead of skipping it. Re-running a run repeats the draft event, so it must read the draft
+state from the API; a re-run after the pull request leaves draft, started by a trusted
+`ready_for_review` workflow or by a maintainer, then reviews the head without a new commit.
+And it must not use `cancel-in-progress`, so a superseded run has to stop itself instead of
+being cancelled.
 
 ## Credential setup
 
