@@ -204,7 +204,8 @@ function runReviewer(script) {
 	assert.equal(run.status, 0, run.stderr);
 
 	const report = JSON.parse(readFileSync(join(directories.work, 'review-report.json'), 'utf8'));
-	return { run, report };
+	const output = readFileSync(join(directories.work, 'github-output'), 'utf8');
+	return { run, report, output };
 }
 
 /** A reviewer that answers its turns in order, repeating the last reply. It runs in the work directory. */
@@ -225,6 +226,48 @@ test('the reasons a reply needed repair are recorded even when the repair succee
 	assert.ok(report.repairReasons.length > 0);
 	assert.deepEqual(report.failedRepairReasons, []);
 	assert.match(run.stdout, /Rejected before repair: /u);
+});
+
+/** A reviewer that answers its first turn with `reply` and fails every later one. */
+const answeringOnce = reply =>
+	[
+		"import { existsSync, writeFileSync } from 'node:fs';",
+		"if (existsSync('turns')) process.exit(1);",
+		"writeFileSync('turns', '1');",
+		`const response = ${JSON.stringify(reply)};`,
+		'process.stdout.write(JSON.stringify({ response, inputTokens: 1, outputTokens: 1, duration: 1 }));',
+	].join('\n');
+
+test('a repair that fails to run names its operational error beside the plain reason', () => {
+	const { report } = runReviewer(answeringOnce('{"version": 1}'));
+
+	assert.equal(report.outcome, 'incomplete');
+	assert.deepEqual(report.errors, [
+		"The reviewer's reply did not satisfy the result contract, and one repair did not produce a valid result.",
+		'The reviewer exited with code 1.',
+	]);
+});
+
+test('a report too large to hand over keeps every field except the result', () => {
+	const large = cleanResult();
+	large.context = [
+		{
+			source: { ref: 'src/small.js', revision: head },
+			kind: 'inspected',
+			observation: 'x'.repeat(950_000),
+		},
+	];
+	const { report, output } = runReviewer(answering(JSON.stringify(large)));
+
+	assert.equal(report.outcome, 'clean');
+	const delivered = JSON.parse(/^report<<(\S+)\n([\s\S]*?)\n\1$/mu.exec(output)[2]);
+	assert.deepEqual(Object.keys(delivered), Object.keys(report));
+	assert.equal(delivered.valid, false);
+	assert.equal(delivered.outcome, 'incomplete');
+	assert.deepEqual(delivered.errors, [
+		'The review result was too large to hand to the publication job.',
+	]);
+	assert.equal(delivered.result, null);
 });
 
 test('a reply that still fails validation after its repair gives the pull request one plain reason', () => {

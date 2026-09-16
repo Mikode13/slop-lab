@@ -37,8 +37,8 @@ jobs:
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    # Ten minutes of waiting for CI, two reviewer turns of fifteen minutes, and setup.
-    timeout-minutes: 45
+    # Up to eleven minutes of waiting for CI, two reviewer turns of fifteen minutes, and setup.
+    timeout-minutes: 50
     environment: ai-review
     permissions:
       checks: read

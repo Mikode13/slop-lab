@@ -268,21 +268,15 @@ const serialized = JSON.stringify(report);
 writeFileSync(join(workDirectory, 'review-report.json'), JSON.stringify(report, null, 2));
 
 // A job output is capped near 1 MB, so an oversized report is replaced by the fact that it was
-// oversized rather than truncated into something the publisher would fail to parse.
+// oversized rather than truncated into something the publisher would fail to parse. Every other
+// field is kept from the report itself, so a field added to one shape reaches the other.
 const deliverable =
 	bytes(serialized) > 900_000
 		? JSON.stringify({
-				repository,
-				base: baseSha,
-				head: headSha,
+				...report,
 				valid: false,
 				outcome: 'incomplete',
 				errors: ['The review result was too large to hand to the publication job.'],
-				omissions: buildReport.omissions,
-				attempts,
-				repairReasons,
-				failedRepairReasons,
-				usage,
 				result: null,
 			})
 		: serialized;
