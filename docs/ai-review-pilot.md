@@ -22,10 +22,9 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 | Evidence budget  | 1,250,000 bytes of prompt, about 500,000 tokens, filled in priority order and never truncated |
 | Cost ceiling     | The EUR 30 per month the standard allows for the whole provider account                       |
 
-The standard's provider section still describes Claude Code GitHub Actions.
-[Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41) updates it to
-describe `harness-cli`, together with the enforcement rules this pilot settled. ADR 0017 needs
-no change: it is deliberately agnostic about provider and runtime.
+Since [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41), the standard
+describes `harness-cli` and the merge rules this pilot follows. ADR 0017 needed no change: it
+leaves provider, runtime, and severity rules to the standard.
 
 ## What runs
 
@@ -207,8 +206,8 @@ makes the pilot blocking as soon as the check can be required, so the order is:
    [Credential setup](#credential-setup) describes.
 3. Run the first end-to-end case and the remaining pilot cases, with the status reported but
    not required.
-4. Merge the standard update,
-   [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41).
+4. Align the standard with the pilot, which
+   [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41) did.
 5. Promote, and create the review ruleset in the same change.
 
 The review ruleset:
