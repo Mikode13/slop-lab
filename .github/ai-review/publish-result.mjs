@@ -205,7 +205,7 @@ function verdict(report, placed) {
 			...open.map(
 				({ finding, line }) =>
 					`- **[${finding.severity ?? 'UNCLASSIFIED'}] ${sanitize(finding.title)}** ` +
-					`(\`${sanitize(finding.location.path)}:${line}\`)`,
+					`(\`${sanitize(finding.location.path)}:${finding.location.line ?? line}\`)`,
 			),
 		);
 	}
@@ -400,66 +400,56 @@ if (alreadyPublished) {
 }
 
 // A non-blocking comment left open would hold the merge back like a blocking one, because the
-// ruleset requires every conversation to be resolved. If they cannot be resolved, the check
-// fails rather than letting a note pass for a blocker.
+// ruleset requires every conversation to be resolved. Success is counted, not assumed: every
+// comment this job posted has to be found and resolved, or the check fails and says why.
 let notesLeftOpen = false;
 if (placed.notes.length > 0) {
 	const [owner, name] = repository.split('/');
-	try {
-		const data = await graphql(
-			`
-				query ($owner: String!, $name: String!, $number: Int!) {
-					repository(owner: $owner, name: $name) {
-						pullRequest(number: $number) {
-							reviewThreads(first: 100) {
-								nodes {
-									id
-									isResolved
-									comments(first: 1) {
-										nodes {
-											body
-											author {
-												login
-											}
-										}
-									}
-								}
-							}
-						}
+	const threadsQuery = `
+		query ($owner: String!, $name: String!, $number: Int!, $after: String) {
+			repository(owner: $owner, name: $name) {
+				pullRequest(number: $number) {
+					reviewThreads(first: 100, after: $after) {
+						pageInfo { hasNextPage endCursor }
+						nodes { id isResolved comments(first: 1) { nodes { body author { login } } } }
 					}
 				}
-			`,
-			{ owner, name, number: Number(pullNumber) },
-		);
-		const open = data.repository.pullRequest.reviewThreads.nodes.filter(thread => {
-			const first = thread.comments.nodes[0];
-			return (
-				!thread.isResolved &&
-				botLogins.has(first?.author?.login) &&
-				(first?.body ?? '').includes(noteMarker)
+			}
+		}
+	`;
+	const resolveMutation = `
+		mutation ($threadId: ID!) {
+			resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+		}
+	`;
+	const isNote = thread => {
+		const first = thread.comments.nodes[0];
+		return botLogins.has(first?.author?.login) && (first?.body ?? '').includes(noteMarker);
+	};
+	const notesFrom = async after => {
+		const data = await graphql(threadsQuery, { owner, name, number: Number(pullNumber), after });
+		const { nodes, pageInfo } = data.repository.pullRequest.reviewThreads;
+		const found = nodes.filter(isNote);
+		return pageInfo.hasNextPage ? [...found, ...(await notesFrom(pageInfo.endCursor))] : found;
+	};
+
+	try {
+		const threads = await notesFrom(null);
+		if (threads.length < placed.notes.length) {
+			throw new Error(
+				`found ${threads.length} of the ${placed.notes.length} non-blocking comment(s) posted`,
 			);
-		});
-		await Promise.all(
-			open.map(thread =>
-				graphql(
-					`
-						mutation ($threadId: ID!) {
-							resolveReviewThread(input: { threadId: $threadId }) {
-								thread {
-									id
-								}
-							}
-						}
-					`,
-					{ threadId: thread.id },
-				),
-			),
+		}
+		const open = threads.filter(thread => !thread.isResolved);
+		await Promise.all(open.map(thread => graphql(resolveMutation, { threadId: thread.id })));
+		console.log(
+			`Resolved ${open.length} non-blocking comment(s); ${threads.length - open.length} already were.`,
 		);
-		console.log(`Resolved ${open.length} non-blocking comment(s).`);
 	} catch (error) {
 		notesLeftOpen = true;
 		console.log(
-			`The non-blocking comments could not be resolved: ${sanitize(error instanceof Error ? error.message : error)}`,
+			`The non-blocking comments could not be resolved: ${sanitize(error instanceof Error ? error.message : error)}. ` +
+				'Re-run the failed jobs to try again.',
 		);
 	}
 }

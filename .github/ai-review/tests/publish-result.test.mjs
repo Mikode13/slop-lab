@@ -279,3 +279,37 @@ test('non-blocking comments that cannot be resolved fail the check', () => {
 		/The non-blocking comments could not be resolved: Resource not accessible by integration/u,
 	);
 });
+
+test('a blocking finding outside the hunk of a changed file is commented on its first changed line', () => {
+	const { status, review } = publish([blockingFinding('F1', 'src/changed.js', 40)]);
+
+	assert.equal(status, 0);
+	assert.equal(review.comments[0].line, 1);
+	assert.match(review.comments[0].body, /Reported for line 40, which is outside the diff\./u);
+	assert.match(review.body, /\(`src\/changed\.js:40`\)/u);
+});
+
+test('non-blocking comments beyond the first page of threads are still found and resolved', () => {
+	const { status, resolved } = publish(
+		[
+			blockingFinding('F1', 'src/changed.js', 2),
+			note('F2', 'src/changed.js', 3),
+			note('F4', 'src/changed.js', 1),
+		],
+		{ env: { STUB_THREAD_PAGE_SIZE: '1' } },
+	);
+
+	assert.equal(status, 0);
+	assert.deepEqual(resolved.toSorted(), ['thread-1', 'thread-2']);
+});
+
+test('non-blocking comments the thread query does not return fail the check', () => {
+	const { status, stdout, resolved } = publish(
+		[blockingFinding('F1', 'src/changed.js', 2), note('F2', 'src/changed.js', 3)],
+		{ env: { STUB_VISIBLE_THREADS: '1' } },
+	);
+
+	assert.equal(status, 1);
+	assert.deepEqual(resolved, []);
+	assert.match(stdout, /could not be resolved: found 0 of the 1 non-blocking comment\(s\) posted/u);
+});

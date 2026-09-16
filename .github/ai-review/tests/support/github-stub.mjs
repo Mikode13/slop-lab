@@ -15,13 +15,23 @@ const resolved = [];
 
 const reply = body => ({ ok: true, json: () => Promise.resolve(body) });
 
-/** One open thread per comment of the posted review, started by the Actions bot. */
-const threads = () =>
-	(posted?.comments ?? []).map((comment, index) => ({
-		id: `thread-${index}`,
-		isResolved: false,
-		comments: { nodes: [{ body: comment.body, author: { login: 'github-actions' } }] },
-	}));
+/**
+ * One open thread per comment of the posted review, started by the Actions bot, served in pages
+ * of STUB_THREAD_PAGE_SIZE. STUB_VISIBLE_THREADS hides every thread after that many.
+ */
+function threads(after) {
+	const all = (posted?.comments ?? [])
+		.map((comment, index) => ({
+			id: `thread-${index}`,
+			isResolved: false,
+			comments: { nodes: [{ body: comment.body, author: { login: 'github-actions' } }] },
+		}))
+		.slice(0, Number(process.env.STUB_VISIBLE_THREADS ?? Infinity));
+	const start = Number(after ?? 0);
+	const nodes = all.slice(start, start + Number(process.env.STUB_THREAD_PAGE_SIZE ?? 100));
+	const end = start + nodes.length;
+	return { pageInfo: { hasNextPage: end < all.length, endCursor: String(end) }, nodes };
+}
 
 function answerGraphql(options) {
 	if (process.env.STUB_GRAPHQL_ERROR) {
@@ -33,7 +43,9 @@ function answerGraphql(options) {
 		writeFileSync(process.env.STUB_RESOLVED, JSON.stringify(resolved));
 		return reply({ data: { resolveReviewThread: { thread: { id: variables.threadId } } } });
 	}
-	return reply({ data: { repository: { pullRequest: { reviewThreads: { nodes: threads() } } } } });
+	return reply({
+		data: { repository: { pullRequest: { reviewThreads: threads(variables.after) } } },
+	});
 }
 
 globalThis.fetch = (url, options = {}) => {

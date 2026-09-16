@@ -150,6 +150,14 @@ GitHub accepts comments only on lines of the diff, so a non-blocking finding abo
 is described in the summary instead, and a blocking one about another line of a changed file is
 commented on that file's first changed line and names the line it means.
 
+Commenting non-blocking findings on their lines deviates, for now, from the automated review
+standard, which still asks for them only in the review summary.
+[Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41) amends the standard
+to allow it, and this pilot is what tests the amendment: if it is not accepted, the publisher
+goes back to describing non-blocking findings only in the summary. Whether the publication
+token may resolve review threads is shown by the first review published with this behaviour,
+not by the tests, which stand in for GitHub.
+
 The summary keeps only the verdict, the blocking findings with their lines, what could not go on
 a line, the reviewer's questions and limitations, follow-up that names no finding, and context
 the reviewer did not receive. How each perspective was reviewed goes to the job summary, with
