@@ -26,7 +26,7 @@ env:
   SKILL_REVISION: 6015886996d5fbadc21aa49353f7e476ae1737be
   REVIEW_MODEL: opus
   REVIEW_EFFORT: high
-  REVIEW_TIMEOUT_SECONDS: '600'
+  REVIEW_TIMEOUT_SECONDS: '900'
 
 jobs:
   # Reads the change and spends the provider credential. It has no write access anywhere, and
@@ -37,7 +37,8 @@ jobs:
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Up to eleven minutes of waiting for CI, two reviewer turns of fifteen minutes, and setup.
+    timeout-minutes: 50
     environment: ai-review
     permissions:
       checks: read

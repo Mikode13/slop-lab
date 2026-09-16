@@ -17,7 +17,7 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 | Review skill     | `mikode-review` from `Mikode13/skills` at `6015886`, the `v0.3.0` tag                         |
 | Provider         | Claude, on a MiKode-owned account, through `CLAUDE_CODE_OAUTH_TOKEN`                          |
 | Model and effort | `opus` at `high` reasoning effort                                                             |
-| Provider timeout | 10 minutes per turn, enforced by the runner                                                   |
+| Provider timeout | 15 minutes per turn, enforced by the runner                                                   |
 | Repair attempts  | At most one additional turn to recover a reply that failed contract validation                |
 | Evidence budget  | 1,250,000 bytes of prompt, about 500,000 tokens, filled in priority order and never truncated |
 | Cost ceiling     | The EUR 30 per month the standard allows for the whole provider account                       |
@@ -46,11 +46,12 @@ The work is split across jobs that do not share credentials:
 
 `Analyze` checks out the pull request head without persisted Git credentials and reads it as
 data: nothing from it runs, and the reviewer starts in a separate work directory. The
-reviewer's own scripts, the repository instructions, the architecture document, and the
-decision log are all read from the base revision, so a pull request cannot rewrite the reviewer
-that is about to judge it. The review skill comes from the pinned skills revision and
-applicable standards from the current `Mikode13/engineering` main, whose commit is recorded in
-the review input.
+reviewer's progress output, which the pull request can influence, is printed with workflow
+commands switched off. The reviewer's own scripts, the repository instructions, the
+architecture document, and the decision log are all read from the base revision, so a pull
+request cannot rewrite the reviewer that is about to judge it. The review skill comes from the
+pinned skills revision and applicable standards from the current `Mikode13/engineering` main,
+whose commit is recorded in the review input.
 
 `Publish` re-runs the full contract validation on the result it receives before it acts on it,
 and neutralizes mentions, HTML, and comment markers in every string it renders. Under
@@ -95,8 +96,10 @@ The prompt reaches `harness-cli` as a file through `--prompt-file`, so the model
 rather than the command line. The 1,250,000-byte budget is about 500,000 tokens at the roughly
 2.5 characters per token that Anthropic documents for the current tokenizer. That is half of
 Opus 5's 1M-token window: it leaves room for the agent's own prompt and the reply, and it
-stays below the length at which a long context starts to degrade the review. Every run records
-its input tokens in the review report, so the first real runs can confirm the ratio.
+stays below the length at which a long context starts to degrade the review. The report records
+the tokens `harness-cli` returns, but that figure cannot confirm the ratio yet: `harness` counts
+only uncached input, so the first real review reported 2 input tokens for a 143,506-byte
+prompt.
 
 Measured against the pinned skill and the current standards:
 
@@ -137,6 +140,12 @@ request. Any workflow allowed to write reviews could have posted one, and an ear
 an `incomplete` review publishes its own review, and only a repeated delivery of the same
 report is left unpublished. To retry, use "Re-run all jobs": re-running only the failed jobs
 repeats the publication of the same report without a new review.
+
+The reasons a reply failed contract validation go to the job log and the review report, even
+when the repair succeeds, because they show which part of the contract a first reply gets
+wrong. When the repair fails too, the pull request is told only that the reply did not satisfy
+the contract. A review of pull request 6 took 584 seconds of a 600-second turn, so each turn
+now has fifteen minutes.
 
 ## Enforcement
 
