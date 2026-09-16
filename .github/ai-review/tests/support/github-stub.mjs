@@ -4,8 +4,8 @@
  * STUB_THREADS as GraphQL returns them, and the pull request comments in STUB_COMMENTS, and it
  * appends every write, including any GraphQL mutation, to the JSON array in STUB_WRITES.
  *
- * Like GitHub, it lists a thread for each comment of a review posted during the run, unless
- * STUB_HIDE_POSTED_THREADS is set, and resolving or reopening a thread changes what it lists.
+ * Like GitHub, it lists a thread for each comment of a review posted during the run, and
+ * resolving or reopening a thread changes what it lists.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -33,7 +33,7 @@ globalThis.fetch = (url, options = {}) => {
 
 	if (method === 'POST' && pathname === '/graphql') {
 		const { query, variables } = JSON.parse(options.body);
-		const listed = [...threads, ...(process.env.STUB_HIDE_POSTED_THREADS ? [] : postedThreads)];
+		const listed = [...threads, ...postedThreads];
 		if (query.includes('mutation')) {
 			record(method, pathname, { query, variables });
 			const thread = listed.find(item => item.id === variables.id);

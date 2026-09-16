@@ -104,7 +104,7 @@ const threadsQuery = `
 	}
 `;
 
-export async function readThreads(github, repository, pullNumber) {
+async function readThreads(github, repository, pullNumber) {
 	const [owner, name] = repository.split('/');
 	const threads = [];
 	let after = null;

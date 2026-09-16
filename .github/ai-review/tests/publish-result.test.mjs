@@ -147,7 +147,6 @@ function run(script, { threads = [], comments = [], env = {} } = {}) {
 			STUB_DIFF: file('change.diff'),
 			STUB_THREADS: file('threads.json'),
 			STUB_WRITES: file('writes.json'),
-			THREAD_RETRY_DELAY_MS: '0',
 			...env,
 		},
 	});
@@ -220,7 +219,7 @@ test('a BLOCKER is commented on its line, named in the summary, and fails the ch
 	assert.equal(review.comments[0].line, 2);
 	assert.match(
 		review.comments[0].body,
-		/This fails `AI Review \/ required` while a review still finds it\./u,
+		/Blocker: `AI Review \/ required` fails while a review still finds this, so the pull request cannot merge\./u,
 	);
 	assert.match(summary.body.body, /Not ready to merge: 1 blocking finding\(s\)\./u);
 	assert.match(summary.body.body, /- \*\*\[BLOCKER\] Finding F1\*\* \(`src\/changed\.js:2`\)$/mu);
@@ -235,39 +234,23 @@ test('a SHOULD FIX of the change passes the check but leaves a conversation that
 	assert.match(review.comments[0].body, /Problem F1\. Consequence F1\.\n\nDirection F1\./u);
 	assert.match(
 		review.comments[0].body,
-		/This conversation blocks the merge until it is resolved: fix it, or resolve it with a link to an issue or the reason it can wait\./u,
+		/This conversation blocks the merge\. Resolve it only after fixing this in the code or opening an issue that tracks it; if the finding is wrong, reply with the reason first\./u,
 	);
 	assert.deepEqual(mutations, []);
 });
 
-test('a SUGGESTION of the change is commented and resolved at once, so it can be ignored', () => {
-	const { status, outputs, review, summary, mutations } = publish(
-		resultWith([finding('F1', { severity: 'SUGGESTION' }), finding('F2', at('src/changed.js', 3))]),
+test('a SUGGESTION of the change holds the merge like a SHOULD FIX but can be resolved without a change', () => {
+	const { status, outputs, review, mutations } = publish(
+		resultWith([finding('F1', { severity: 'SUGGESTION' })]),
 	);
 
 	assert.equal(status, 0);
-	assert.match(outputs, /outcome=concerns/u);
-	assert.equal(review.comments.length, 2);
+	assert.match(outputs, /outcome=suggestions/u);
 	assert.match(
 		review.comments[0].body,
-		/Optional, so this conversation was resolved when it was posted\./u,
+		/This conversation blocks the merge until it is resolved\. It is optional: resolve it once read, with or without a change\./u,
 	);
-	assert.deepEqual(mutations, ['resolve posted-0']);
-	assert.doesNotMatch(summary.body.body, /could not be resolved/u);
-});
-
-test('a SUGGESTION comment GitHub does not list yet is named in the summary as still open', () => {
-	const { status, summary, mutations } = publish(
-		resultWith([finding('F1', { severity: 'SUGGESTION' })]),
-		{ env: { STUB_HIDE_POSTED_THREADS: '1' } },
-	);
-
-	assert.equal(status, 0);
 	assert.deepEqual(mutations, []);
-	assert.match(
-		summary.body.body,
-		/1 suggestion comment\(s\) could not be resolved automatically, so they hold the merge until someone resolves them\./u,
-	);
 });
 
 test('a finding unrelated to the change opens no conversation and is listed for triage', () => {
@@ -428,7 +411,7 @@ test('an earlier finding that looks fixed is answered, and its conversation is l
 	assert.deepEqual(closed.replies, []);
 });
 
-test('a suggestion found again as a SHOULD FIX reopens its conversation once', () => {
+test('a suggestion someone resolved reopens once when it is found again as a SHOULD FIX', () => {
 	const first = published(resultWith([finding('F1', { severity: 'SUGGESTION' })]));
 	const { earlier, fields } = earlierReview(first).recheck('present', 'F7');
 	const worse = resultWith([finding('F7')], fields);
@@ -443,7 +426,7 @@ test('a suggestion found again as a SHOULD FIX reopens its conversation once', (
 	assert.equal(again.replies.length, 1);
 	assert.match(
 		again.replies[0],
-		/^Now SHOULD FIX in bbbbbbb, at `src\/changed\.js:2`: It is present\. This conversation blocks the merge until it is resolved/u,
+		/^Now SHOULD FIX in bbbbbbb, at `src\/changed\.js:2`: It is present\. This conversation blocks the merge\. Resolve it only after/u,
 	);
 
 	const resolvedByAPerson = publish(worse, {
