@@ -1,25 +1,60 @@
 /**
- * Stands in for the GitHub API while the publisher runs under test: it serves a prepared diff
- * and review list, and records the review the publisher posts, so no test reaches GitHub or
- * needs a token.
+ * Stands in for the GitHub API while the publisher or the collector runs under test, so no test
+ * reaches GitHub or needs a token. It serves the diff in STUB_DIFF, the review threads in
+ * STUB_THREADS as GraphQL returns them, and the pull request comments in STUB_COMMENTS, and it
+ * appends every write, including any GraphQL mutation, to the JSON array in STUB_WRITES.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
-const diff = readFileSync(process.env.STUB_DIFF, 'utf8');
-const reviews = JSON.parse(readFileSync(process.env.STUB_REVIEWS, 'utf8'));
+const load = (variable, fallback) =>
+	process.env[variable] && existsSync(process.env[variable])
+		? JSON.parse(readFileSync(process.env[variable], 'utf8'))
+		: fallback;
 
-const reply = body => ({ ok: true, json: () => Promise.resolve(body) });
+const threads = load('STUB_THREADS', []);
+const comments = load('STUB_COMMENTS', []);
+
+const reply = body => Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+
+function record(method, path, body) {
+	const writes = load('STUB_WRITES', []);
+	writes.push({ method, path, body });
+	writeFileSync(process.env.STUB_WRITES, JSON.stringify(writes));
+}
 
 globalThis.fetch = (url, options = {}) => {
 	const method = options.method ?? 'GET';
-	if (method === 'POST' && url.endsWith('/reviews')) {
-		writeFileSync(process.env.STUB_POSTED, options.body);
-		return Promise.resolve(reply({ id: 1 }));
+	const { pathname, searchParams } = new URL(url);
+
+	if (method === 'POST' && pathname === '/graphql') {
+		const { query, variables } = JSON.parse(options.body);
+		if (query.includes('mutation')) {
+			record(method, pathname, { query, variables });
+			return reply({ data: {} });
+		}
+		const start = Number(variables.after ?? 0);
+		const nodes = threads.slice(start, start + Number(process.env.STUB_THREAD_PAGE_SIZE ?? 50));
+		const end = start + nodes.length;
+		const pageInfo = { hasNextPage: end < threads.length, endCursor: String(end) };
+		return reply({ data: { repository: { pullRequest: { reviewThreads: { pageInfo, nodes } } } } });
 	}
-	if (url.endsWith('/reviews?per_page=100')) return Promise.resolve(reply(reviews));
+	if (method !== 'GET') {
+		record(method, pathname, JSON.parse(options.body));
+		return reply({
+			id: 99,
+			html_url: 'https://github.com/Mikode13/slop-lab/pull/7#issuecomment-99',
+		});
+	}
+	if (/^\/repos\/[^/]+\/[^/]+\/issues\/\d+\/comments$/u.test(pathname)) {
+		const page = Number(searchParams.get('page') ?? 1);
+		return reply(comments.slice((page - 1) * 100, page * 100));
+	}
 	if (options.headers?.accept?.endsWith('diff')) {
-		return Promise.resolve({ ok: true, text: () => Promise.resolve(diff) });
+		return Promise.resolve({
+			ok: true,
+			text: () => Promise.resolve(readFileSync(process.env.STUB_DIFF, 'utf8')),
+		});
 	}
 	return Promise.reject(new Error(`Unexpected request: ${method} ${url}`));
 };

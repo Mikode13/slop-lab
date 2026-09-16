@@ -14,7 +14,7 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 | Choice           | Value                                                                                         |
 | ---------------- | --------------------------------------------------------------------------------------------- |
 | Reviewer command | `@mikode13/harness-cli@1.1.0`, with the prompt passed through `--prompt-file`                 |
-| Review skill     | `mikode-review` from `Mikode13/skills` at `6015886`, the `v0.3.0` tag                         |
+| Review skill     | `mikode-review` from `Mikode13/skills` at `8c46b0e`, the head of skills pull request 17       |
 | Provider         | Claude, on a MiKode-owned account, through `CLAUDE_CODE_OAUTH_TOKEN`                          |
 | Model and effort | `opus` at `high` reasoning effort                                                             |
 | Provider timeout | 15 minutes per turn, enforced by the runner                                                   |
@@ -39,10 +39,10 @@ succeeds for the same head commit.
 
 The work is split across jobs that do not share credentials:
 
-| Job       | Credentials                                                    | Responsibility                                          |
-| --------- | -------------------------------------------------------------- | ------------------------------------------------------- |
-| `Analyze` | Provider token from `ai-review`, read-only GitHub token        | Collect evidence, run the reviewer, validate the result |
-| `Publish` | GitHub token with `pull-requests: write` and `statuses: write` | Revalidate, publish the review, report the status       |
+| Job       | Credentials                                                    | Responsibility                                                               |
+| --------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `Analyze` | Provider token from `ai-review`, read-only GitHub token        | Collect evidence and earlier findings, run the reviewer, validate the result |
+| `Publish` | GitHub token with `pull-requests: write` and `statuses: write` | Revalidate, comment findings, update the summary, report the status          |
 
 `Analyze` checks out the pull request head without persisted Git credentials and reads it as
 data: nothing from it runs, and the reviewer starts in a separate work directory. The
@@ -115,37 +115,75 @@ than designed around here.
 
 ## Outcomes
 
-| Outcome      | Check                           | Merge effect                                                                       |
-| ------------ | ------------------------------- | ---------------------------------------------------------------------------------- |
-| `clean`      | `AI Review / required` succeeds | Nothing blocks                                                                     |
-| `blocked`    | `AI Review / required` succeeds | Each introduced blocking finding opens a review conversation that must be resolved |
-| `incomplete` | `AI Review / required` fails    | The gate blocks until a review completes                                           |
+Among findings, only a `BLOCKER` holds the merge back. Its severity comes from the harm it
+describes, so it blocks whether or not the change introduced it.
 
-A `blocked` execution completed, so its check passes; the unresolved conversations are what
-prevent the merge, which is why the repository ruleset must require conversation resolution
-alongside the check. This follows the standard. Note that
-[Mikode13/engineering#27](https://github.com/Mikode13/engineering/issues/27) still describes
-mapping `blocked` to a failing check, which the standard has since superseded.
+| Outcome       | Check                           | What it means                                                       |
+| ------------- | ------------------------------- | ------------------------------------------------------------------- |
+| `blocked`     | `AI Review / required` fails    | At least one `BLOCKER`                                              |
+| `concerns`    | `AI Review / required` succeeds | A `SHOULD FIX` of the change, and no `BLOCKER`                      |
+| `suggestions` | `AI Review / required` succeeds | Only `SUGGESTION` findings of the change                            |
+| `clean`       | `AI Review / required` succeeds | Nothing to change, though findings outside the change may be listed |
+| `incomplete`  | `AI Review / required` fails    | No review that can be trusted; the gate blocks until one completes  |
 
-Pre-existing findings and suggestions keep their real severity, never block, and appear in the
-summary. A provider failure, a timeout, a reply that fails contract validation twice, a result
-bound to another commit, a result too large to hand between jobs, and an analysis job that did
-not succeed all produce `incomplete`. A blocking finding that cannot be anchored to a position
-in the diff also fails the check, because a conversation nobody has to resolve would leave the
-outcome unenforced.
+A `SHOULD FIX` or a `SUGGESTION` of the change opens a conversation, and the `main-baseline`
+ruleset requires every conversation to be resolved before a merge, so each one is read without
+failing the check. Closing a conversation records a decision. A `SHOULD FIX` is closed after
+fixing it, or with a link to an issue or the reason it can wait, and a `SUGGESTION` can be
+closed once read. Nothing checks that reason yet.
 
-Each execution decides the status from its own result, never from a review already on the pull
-request. Any workflow allowed to write reviews could have posted one, and an earlier
-`incomplete` review must not stop a retry from publishing its conversations. So a retry after
-an `incomplete` review publishes its own review, and only a repeated delivery of the same
-report is left unpublished. To retry, use "Re-run all jobs": re-running only the failed jobs
-repeats the publication of the same report without a new review.
+A provider failure, a timeout, a reply that fails contract validation twice, a result bound to
+another commit, a result too large to hand between jobs, an analysis job that did not succeed,
+and a result that does not recheck every earlier finding all produce `incomplete`.
+
+Each execution decides the status from its own result, never from what is already on the pull
+request, so a retry after an `incomplete` review publishes its own result. Publishing the same
+report again writes nothing, because every comment carries the key of its finding. To retry,
+use "Re-run all jobs": re-running only the failed jobs publishes the same report again without
+a new review.
 
 The reasons a reply failed contract validation go to the job log and the review report, even
 when the repair succeeds, because they show which part of the contract a first reply gets
 wrong. When the repair fails too, the pull request is told only that the reply did not satisfy
 the contract. A review of pull request 6 took 584 seconds of a 600-second turn, so each turn
 now has fifteen minutes.
+
+## Findings on the pull request
+
+A finding appears where a person reviewing by hand would put it:
+
+| Finding                                                          | Where it appears                                        |
+| ---------------------------------------------------------------- | ------------------------------------------------------- |
+| A `BLOCKER`, or any finding of the change, on a line of the diff | A comment on that line, which opens a conversation      |
+| The same, about a whole file of the diff                         | A comment on the file's first changed line that says so |
+| The same, about a line GitHub cannot comment on                  | The summary, with its reasoning                         |
+| A finding outside the change, below `BLOCKER`                    | One line in the summary for a maintainer to triage      |
+
+The summary is one pull request comment that every later review updates in place. It holds the
+outcome, the blocking findings, what could not go on a line, the reviewer's questions and
+limitations, and the context the reviewer did not receive. How each perspective was reviewed,
+each recheck, and why a reply was rejected go to the job summary.
+
+Each review covers the whole pull request, from where it branched off `main` to its latest
+commit. Before a later review, the analysis job collects every finding earlier reviews
+published: those with a conversation, open or closed, and those the summary lists. The reviewer
+rechecks each one against the new commit. Checking a named finding is more reliable than
+expecting to discover it again, so a finding the reviewer does not find again is not taken as
+fixed:
+
+- **Still present:** no new comment. If the commented code moved, one reply in the open
+  conversation says where it is now. A `BLOCKER` whose conversation was closed still blocks,
+  and the summary says so.
+- **Looks fixed:** one reply in an open conversation says why, and the conversation stays open
+  for a person to close. A finding without a conversation is named in the summary once, then
+  dropped.
+- **Cannot be decided:** named in the summary and rechecked next time. An earlier `BLOCKER`
+  that cannot be decided makes the review `incomplete`.
+
+The publisher never closes, reopens, or deletes a conversation. Whether a conversation was
+closed is not given to the reviewer either: it is a decision about the pull request, not
+evidence about the code. The reviewer receives only what the earlier review wrote, fenced like
+any other reviewed content.
 
 ## Enforcement
 
@@ -185,9 +223,9 @@ the way `required-ci` grows with CI adoption.
 
 The bypass exists because the standard lets an authorized maintainer merge past an
 `incomplete` review for an exceptional need, recording the reason, the reviewed head commit,
-and the person accepting the risk in the pull request. A pull-request-only bypass keeps that a
-decision about one merge. Without it, the only way past a provider outage is to edit the
-ruleset, which turns the gate off for every other pull request at the same time. It also
+and the person accepting the risk in the pull request, and because only the owner may merge
+past a `blocked` one. A pull-request-only bypass keeps either a decision about one merge.
+Without it, the only way past a provider outage is to edit the ruleset, which turns the gate off for every other pull request at the same time. It also
 covers the first run of the required workflow, which only the rule itself starts: the
 [continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
 forbids requiring a check before it has reported, and here the rule is what makes it report.
@@ -240,25 +278,27 @@ The change that was reserved as the first case,
 [pull request 1](https://github.com/Mikode13/slop-lab/pull/1), merged before the reviewer
 existed, so the first end-to-end case has to be a new one. It should exercise the same property
 that one would have: a change whose known `src/` defects are pre-existing, so the expected
-result is `clean` with those defects reported as non-blocking follow-up work.
+result is `clean` with those defects listed for triage.
 
 The mechanical cases below do not need the provider: `REVIEWER_COMMAND` replaces `harness-cli`
 with a command that returns a prepared reply, which is how the failure paths are exercised
 without spending quota or waiting on a real run.
 
-| Case                                           | Expected result                             |
-| ---------------------------------------------- | ------------------------------------------- |
-| Small correct change                           | `clean`                                     |
-| Introduced functional regression               | `blocked`                                   |
-| Known debt left untouched                      | `clean`, reported as non-blocking follow-up |
-| No change contract in issue or description     | `incomplete`                                |
-| Instructions rewritten by the pull request     | No effect on the reviewer; ordinary result  |
-| New commit while the review runs               | Previous result superseded and discarded    |
-| Duplicate delivery for one commit              | One review per commit                       |
-| Re-run after an `incomplete` review            | New result published; it sets the status    |
-| Truncated or invalid reply                     | One repair attempt, then `incomplete`       |
-| Provider failure or exhausted quota            | `incomplete`                                |
-| Passing test that does not prove the behaviour | `blocked`                                   |
+| Case                                                  | Expected result                                 |
+| ----------------------------------------------------- | ----------------------------------------------- |
+| Small correct change                                  | `clean`                                         |
+| Change that breaks the behaviour it exists to provide | `blocked`                                       |
+| Change that fails only under particular conditions    | `concerns`                                      |
+| Known debt left untouched                             | `clean`, with the debt listed for triage        |
+| No change contract in issue or description            | `incomplete`                                    |
+| Instructions rewritten by the pull request            | No effect on the reviewer; ordinary result      |
+| New commit while the review runs                      | Previous result superseded and discarded        |
+| New commit after a review                             | Earlier findings rechecked; none reported twice |
+| Duplicate delivery for one commit                     | Nothing published twice                         |
+| Re-run after an `incomplete` review                   | New result published; it sets the status        |
+| Truncated or invalid reply                            | One repair attempt, then `incomplete`           |
+| Provider failure or exhausted quota                   | `incomplete`                                    |
+| Passing test that does not prove the behaviour        | `concerns`                                      |
 
 The rules that decide merge authority without the provider also have focused tests in
 [`.github/ai-review/tests`](../.github/ai-review/tests). `pnpm run check` runs them through
@@ -278,9 +318,10 @@ reviewer can read while that case runs.
 Promote only after roughly ten to twelve controlled executions show:
 
 - every seeded blocker detected, and no blocking finding on a change known to be correct;
-- no result attributed to the wrong commit, and no duplicate review;
+- no result attributed to the wrong commit;
 - no execution of head code or head configuration, and no secret in a log, prompt, or artifact;
-- the correct check and merge effect for `clean`, `blocked`, and `incomplete`;
+- the correct check and merge effect for every outcome;
+- no finding reported twice, and no earlier finding lost, across the commits of a pull request;
 - accidental `incomplete` at or below one execution in ten, excluding the cases that force a
   failure;
 - a projected monthly cost within the EUR 30 ceiling; and

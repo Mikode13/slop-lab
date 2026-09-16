@@ -1,17 +1,34 @@
 /**
- * Publishes a validated review as one pull request review bound to the reviewed commit.
+ * Publishes a validated review the way a person reviewing by hand would: each finding the author
+ * has to act on as a comment on its line, and one summary comment that every later review of the
+ * pull request updates in place.
  *
  * This job holds write access and no provider credential, so it treats the analysis job's
  * output as data: it re-runs contract validation before believing an outcome, and it
- * neutralizes every string it renders. The three outcomes map to merge authority as the
- * automated review standard requires: `clean` and `blocked` both completed, so the check
- * succeeds for both, and only the unresolved conversations raised for blocking findings stop
- * the merge. `incomplete` fails the check.
+ * neutralizes every string it renders.
+ *
+ * Only a `BLOCKER` holds the merge back, through the `AI Review / required` status the workflow
+ * reports from this job's outcome; `incomplete` fails that status too. `SHOULD FIX` and
+ * `SUGGESTION` findings of the change open conversations for a person to close, and findings
+ * unrelated to the change are listed in the summary for a maintainer to triage.
+ *
+ * A later review rechecks what earlier ones found. This job never closes or deletes a
+ * conversation: it answers in it when the finding looks fixed or has moved, and closing it stays
+ * a person's decision. Every write is identified by the finding's key, so publishing the same
+ * report again posts nothing twice.
  */
 
+import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 
 import { perspectiveKeys, validateResult } from './contract.mjs';
+import {
+	createGitHub,
+	marker,
+	readReviewState,
+	summaryMarker,
+	toEarlierFinding,
+} from './review-state.mjs';
 
 const environment = key => {
 	const value = process.env[key];
@@ -23,10 +40,10 @@ const repository = environment('REPOSITORY');
 const pullNumber = environment('PR_NUMBER');
 const baseSha = environment('BASE_SHA');
 const headSha = environment('HEAD_SHA');
-const token = environment('GITHUB_TOKEN');
 const analyzeResult = environment('ANALYZE_RESULT');
+const github = createGitHub(environment('GITHUB_TOKEN'));
 
-const marker = `<!-- mikode-ai-review:${headSha} -->`;
+const commit = headSha.slice(0, 7);
 const pullPath = `/repos/${repository}/pulls/${pullNumber}`;
 
 /** Neutralizes reviewer-authored text: no mentions, no raw HTML, no hidden comment markers. */
@@ -37,24 +54,6 @@ const sanitize = value =>
 		.replaceAll('>', '&gt;')
 		.replaceAll('@', '@​')
 		.trim();
-
-async function request(
-	path,
-	{ method = 'GET', body, accept = 'application/vnd.github+json' } = {},
-) {
-	const response = await fetch(`https://api.github.com${path}`, {
-		method,
-		headers: {
-			accept,
-			authorization: `Bearer ${token}`,
-			'x-github-api-version': '2022-11-28',
-			...(body ? { 'content-type': 'application/json' } : {}),
-		},
-		...(body ? { body } : {}),
-	});
-	if (!response.ok) throw new Error(`${method} ${path} failed with ${response.status}`);
-	return accept.endsWith('diff') ? response.text() : response.json();
-}
 
 /**
  * Collects the lines of each file that GitHub accepts as a review comment position: the added
@@ -86,89 +85,326 @@ function addressableLines(diff) {
 	return files;
 }
 
-const describeUsage = usage =>
-	(usage ?? [])
-		.map(entry => `${entry.inputTokens ?? '?'} in / ${entry.outputTokens ?? '?'} out`)
-		.join('; ') || 'not reported';
-
-function renderSummary(report) {
-	const lines = [marker, `## AI review: ${report.outcome}`, '', `Reviewed commit: ${headSha}`, ''];
-
-	if (report.valid) {
-		lines.push('### Perspectives', '');
-		for (const key of perspectiveKeys) {
-			const perspective = report.result.perspectives[key];
-			lines.push(
-				`- **${key}** — ${perspective.coverage} (${perspective.depth}): ` +
-					sanitize(perspective.reason),
-			);
-		}
-
-		lines.push('', '### Findings', '');
-		if (report.result.findings.length === 0) {
-			lines.push('No verified findings.');
-		} else {
-			for (const finding of report.result.findings) {
-				const where = finding.location.line
-					? `${finding.location.path}:${finding.location.line}`
-					: finding.location.path;
-				lines.push(
-					`- **[${finding.severity}] ${sanitize(finding.title)}** — ${finding.origin}, ` +
-						`${finding.blocking ? 'blocking' : 'non-blocking'}, at \`${sanitize(where)}\`. ` +
-						`${sanitize(finding.problem)} Consequence: ${sanitize(finding.consequence)} ` +
-						`Direction: ${sanitize(finding.recommended_direction)}`,
-				);
-			}
-		}
-
-		if (report.result.follow_up.length > 0) {
-			lines.push(
-				'',
-				'### Follow-up',
-				'',
-				...report.result.follow_up.map(item => `- ${sanitize(item)}`),
-			);
-		}
-	} else {
-		lines.push(
-			'The review is incomplete: its execution or its result could not be trusted.',
-			'',
-			...(report.errors ?? []).map(error => `- ${sanitize(error)}`),
-			'',
-			'This is not a clean review, and it is not evidence that the change is safe.',
-		);
+/**
+ * Where a comment about `location` can go. A finding about a whole file goes on the file's first
+ * changed line and says so; a finding about a line GitHub cannot comment on has no position,
+ * because a comment on another line would point at code the finding is not about.
+ */
+function positionOf(location, lines) {
+	const addressable = lines.get(location.path);
+	if (!addressable || addressable.size === 0) return null;
+	if (location.line === null) {
+		const first = [...addressable].reduce((lowest, line) => Math.min(lowest, line));
+		return { line: first, wholeFile: true };
 	}
-
-	if ((report.omissions ?? []).length > 0) {
-		lines.push(
-			'',
-			'### Context not supplied to the reviewer',
-			'',
-			...report.omissions.map(omission => `- ${sanitize(omission)}`),
-		);
-	}
-
-	lines.push(
-		'',
-		'---',
-		`Automated pilot, ${report.attempts ?? 0} provider turn(s), ${describeUsage(report.usage)}.`,
-		'A completed review is a second opinion, not proof that the change is correct.',
-	);
-	return lines.join('\n');
+	return addressable.has(location.line) ? { line: location.line, wholeFile: false } : null;
 }
 
-const findingComment = finding =>
-	[
-		`**[${finding.severity}] ${sanitize(finding.title)}**`,
+const where = location =>
+	location.line === null ? location.path : `${location.path}:${location.line}`;
+
+/** Follow-up items that start with the ids of findings, such as "F1: ..." or "F2, F3: ...". */
+function splitFollowUp(items, findings) {
+	const ids = new Set(findings.map(finding => finding.id));
+	const byFinding = new Map();
+	const general = [];
+
+	for (const item of items) {
+		const prefixed = /^([^:]{1,80}):\s*(.+)$/su.exec(item);
+		const named = prefixed ? prefixed[1].split(/[\s,]+/u).filter(Boolean) : [];
+		if (named.length > 0 && named.every(id => ids.has(id))) {
+			for (const id of named) byFinding.set(id, [...(byFinding.get(id) ?? []), prefixed[2]]);
+		} else {
+			general.push(item);
+		}
+	}
+	return { byFinding, general };
+}
+
+const origins = { pre_existing: 'pre-existing', unknown: 'unknown origin' };
+
+const label = finding =>
+	[finding.severity ?? 'UNCLASSIFIED', origins[finding.origin]].filter(Boolean).join(' · ');
+
+const compact = finding =>
+	`**[${label(finding)}] ${sanitize(finding.title)}** (\`${sanitize(where(finding.location))}\`)`;
+
+// What the author is expected to do with the conversation, by severity.
+const closing = {
+	BLOCKER: 'This blocks the merge while a review still finds it.',
+	'SHOULD FIX':
+		'Fix it, or close this conversation with a link to an issue or the reason it can wait.',
+	SUGGESTION: 'Optional. Close this conversation once you have read it.',
+};
+
+const reasoning = (finding, followUp) => [
+	`${sanitize(finding.problem)} ${sanitize(finding.consequence)}`,
+	sanitize(finding.recommended_direction),
+	...followUp.map(item => `Follow-up: ${sanitize(item)}`),
+];
+
+const earlierEntry = (finding, key) =>
+	toEarlierFinding({
+		key,
+		severity: finding.severity,
+		title: finding.title,
+		problem: finding.problem,
+		location: finding.location,
+	});
+
+function findingComment(finding, key, followUp, wholeFile) {
+	const paragraphs = [
+		`**[${label(finding)}] ${sanitize(finding.title)}**`,
+		...(wholeFile ? ['About the whole file, not this line.'] : []),
+		...reasoning(finding, followUp),
+		`_${closing[finding.severity] ?? closing['SHOULD FIX']}_`,
+	];
+	return `${paragraphs.join('\n\n')}\n${marker('finding', earlierEntry(finding, key))}`;
+}
+
+const emptyPlan = ledger => ({
+	comments: [],
+	replies: [],
+	blocking: [],
+	withoutLine: [],
+	incidental: [],
+	fixed: [],
+	undetermined: [],
+	ledger,
+	followUp: { byFinding: new Map(), general: [] },
+});
+
+/**
+ * Decides every write for a valid result: the comments to open, the replies to post in earlier
+ * conversations, what the summary lists, and the ledger of findings that have no conversation.
+ */
+function plan(result, earlierFindings, state, lines) {
+	// A finding reported for the first time is keyed by this result, so the same report published
+	// again finds its own comments instead of posting them twice, and a different result never
+	// mistakes another result's comments for its own.
+	const fingerprint = createHash('sha256')
+		.update(JSON.stringify(result))
+		.digest('hex')
+		.slice(0, 12);
+	const threads = new Map(state.threads.map(thread => [thread.finding.key, thread]));
+	const earlier = new Map(earlierFindings.map(finding => [finding.key, finding]));
+	const findings = new Map(result.findings.map(finding => [finding.id, finding]));
+	const planned = {
+		...emptyPlan([]),
+		followUp: splitFollowUp(result.follow_up, result.findings),
+	};
+
+	const presentKeys = new Map();
+	for (const recheck of result.rechecks.filter(item => item.status === 'present')) {
+		const keys = presentKeys.get(recheck.finding_id) ?? [];
+		presentKeys.set(recheck.finding_id, [...keys, recheck.key]);
+	}
+
+	for (const finding of result.findings) {
+		const keys = [...(presentKeys.get(finding.id) ?? []), `${fingerprint}-${finding.id}`];
+		const key = keys.find(candidate => threads.has(candidate)) ?? keys[0];
+		const thread = threads.get(key);
+		const items = planned.followUp.byFinding.get(finding.id) ?? [];
+		let conversation = thread ? (thread.isResolved ? 'closed' : 'open') : null;
+
+		const position = positionOf(finding.location, lines);
+		if (!thread && position && (finding.blocking || finding.relevance === 'change')) {
+			planned.comments.push({
+				path: finding.location.path,
+				line: position.line,
+				side: 'RIGHT',
+				body: findingComment(finding, key, items, position.wholeFile),
+			});
+			conversation = 'new';
+		}
+		if (conversation === null) planned.ledger.push(earlierEntry(finding, key));
+
+		if (finding.blocking) {
+			planned.blocking.push({ finding, conversation, items });
+		} else if (conversation === null && finding.relevance === 'change') {
+			planned.withoutLine.push({ finding, items });
+		} else if (conversation === null) {
+			planned.incidental.push(finding);
+		}
+	}
+
+	for (const recheck of result.rechecks) {
+		const thread = threads.get(recheck.key);
+		const finding = earlier.get(recheck.key);
+		if (recheck.status === 'undetermined') {
+			planned.undetermined.push({ finding, recheck });
+			if (!thread) planned.ledger.push(finding);
+			continue;
+		}
+		if (!thread) {
+			if (recheck.status === 'fixed') planned.fixed.push({ finding, recheck });
+			continue;
+		}
+		if (thread.isResolved) continue;
+
+		// Say something only when it changes what the conversation already states: that the
+		// finding looks fixed, that it is back, or that it moved away from the commented line.
+		const last = thread.last ?? { status: 'present', where: where(thread.finding.location) };
+		if (recheck.status === 'fixed') {
+			if (last.status === 'fixed') continue;
+			planned.replies.push({
+				thread,
+				body:
+					`Looks fixed in ${commit}: ${sanitize(recheck.reason)} ` +
+					`Close this conversation if you agree.\n${marker('recheck', { status: 'fixed' })}`,
+			});
+			continue;
+		}
+		const now = where(findings.get(recheck.finding_id).location);
+		const moved = thread.isOutdated && last.where !== now;
+		if (last.status === 'present' && !moved) continue;
+		planned.replies.push({
+			thread,
+			body:
+				`Still present in ${commit}, at \`${sanitize(now)}\`: ${sanitize(recheck.reason)}\n` +
+				marker('recheck', { status: 'present', where: now }),
+		});
+	}
+
+	return planned;
+}
+
+const section = (title, items) => (items.length > 0 ? ['', `### ${title}`, '', ...items] : []);
+
+function formatDuration(usage) {
+	const seconds = (usage ?? []).reduce((total, entry) => total + (entry.duration ?? 0), 0);
+	if (seconds <= 0) return null;
+	const rounded = Math.round(seconds);
+	return rounded < 60 ? `${rounded} s` : `${Math.floor(rounded / 60)} min ${rounded % 60} s`;
+}
+
+function verdict(report, planned) {
+	if (!report.valid) {
+		return [
+			'Incomplete: the review could not be completed or its result could not be trusted, so it ' +
+				'is not evidence that the change is safe.',
+			'',
+			...(report.errors ?? []).map(error => `- ${sanitize(error)}`),
+		];
+	}
+	switch (report.outcome) {
+		case 'incomplete':
+			return [
+				'Incomplete: the review could not cover everything it needed, so it is not evidence ' +
+					'that the change is safe. What it did find is published.',
+			];
+		case 'blocked':
+			return [`Not ready to merge: ${planned.blocking.length} blocking finding(s).`];
+		case 'concerns':
+			return [
+				'No blocking findings. Fix each `SHOULD FIX`, or close its conversation with an issue ' +
+					'or a reason.',
+			];
+		case 'suggestions':
+			return [
+				'No blocking findings, only suggestions. Close each conversation once you have read it.',
+			];
+		default:
+			return ['Nothing to change was found in this pull request.'];
+	}
+}
+
+function renderSummary(report, planned) {
+	const result = report.valid ? report.result : null;
+	const full = ({ finding, items }) =>
+		`- ${compact(finding)}. ${reasoning(finding, items).join(' ')}`;
+	const blocking = entry => {
+		if (entry.conversation === null) return full(entry);
+		const closed =
+			entry.conversation === 'closed'
+				? ' Its conversation was closed, but the review still finds it.'
+				: '';
+		return `- ${compact(entry.finding)}${closed}`;
+	};
+
+	return [
+		summaryMarker,
+		`## AI review: ${report.outcome}`,
 		'',
-		sanitize(finding.problem),
+		...verdict(report, planned),
+		...section('Blocking', planned.blocking.map(blocking)),
+		...section('Not on a line of the diff', planned.withoutLine.map(full)),
+		...section(
+			'Found outside this change',
+			planned.incidental.map(finding => `- ${compact(finding)}. ${sanitize(finding.problem)}`),
+		),
+		...section('Earlier findings', [
+			...planned.fixed.map(
+				({ finding, recheck }) => `- Looks fixed: ${compact(finding)}. ${sanitize(recheck.reason)}`,
+			),
+			...planned.undetermined.map(
+				({ finding, recheck }) =>
+					`- Could not recheck: ${compact(finding)}. ${sanitize(recheck.reason)}`,
+			),
+		]),
+		...section(
+			'Questions for the author',
+			(result?.questions ?? []).map(
+				question =>
+					`- ${sanitize(question.question)}` +
+					(question.prevents_completion ? ' This question kept the review from completing.' : ''),
+			),
+		),
+		...section(
+			'Limitations',
+			(result?.limitations ?? []).map(
+				limitation => `- ${sanitize(limitation.reason)} Needed: ${sanitize(limitation.needed)}`,
+			),
+		),
+		...section(
+			'Follow-up',
+			planned.followUp.general.map(item => `- ${sanitize(item)}`),
+		),
+		...section(
+			'Context not supplied to the reviewer',
+			(report.omissions ?? []).map(omission => `- ${sanitize(omission)}`),
+		),
 		'',
-		`**Consequence.** ${sanitize(finding.consequence)}`,
-		'',
-		`**Direction.** ${sanitize(finding.recommended_direction)}`,
-		'',
-		'Resolve this conversation after correcting it, or record why it does not apply.',
+		'---',
+		[`Commit ${commit}`, `${report.attempts ?? 0} provider turn(s)`, formatDuration(report.usage)]
+			.filter(Boolean)
+			.join(' · '),
+		marker('ledger', planned.ledger),
 	].join('\n');
+}
+
+/** What only the people running the pilot need: coverage, rechecks, and rejected replies. */
+function renderOperatorNotes(report) {
+	const reasons = key => (Array.isArray(report[key]) ? report[key] : []);
+	const result = report.valid ? report.result : null;
+
+	return [
+		...section(
+			'Perspectives',
+			result
+				? perspectiveKeys.map(
+						key =>
+							`- **${key}** — ${result.perspectives[key].coverage} ` +
+							`(${result.perspectives[key].depth}): ${sanitize(result.perspectives[key].reason)}`,
+					)
+				: [],
+		),
+		...section(
+			'Rechecks',
+			(result?.rechecks ?? []).map(
+				recheck => `- \`${sanitize(recheck.key)}\` ${recheck.status}: ${sanitize(recheck.reason)}`,
+			),
+		),
+		...section(
+			'Reasons the first reply was rejected',
+			reasons('repairReasons').map(reason => `- ${sanitize(reason)}`),
+		),
+		...section(
+			'Reasons the repair was rejected',
+			reasons('failedRepairReasons').map(reason => `- ${sanitize(reason)}`),
+		),
+	].join('\n');
+}
 
 const incomplete = (report, errors) => ({
 	...report,
@@ -194,10 +430,17 @@ if (analyzeResult !== 'success') {
 	]);
 }
 
-// The publisher never inherits the analysis job's verdict: it revalidates the result it is
-// about to act on, so a report claiming "clean" without a result that earns it cannot pass.
+// The publisher never inherits the analysis job's verdict: it revalidates the result it is about
+// to act on, against the earlier findings the reviewer was asked to recheck, so a report claiming
+// "clean" without a result that earns it cannot pass.
+const earlierFindings = Array.isArray(report.earlier) ? report.earlier : [];
 if (report.valid) {
-	const revalidated = validateResult(report.result, { repository, base: baseSha, head: headSha });
+	const revalidated = validateResult(report.result, {
+		repository,
+		base: baseSha,
+		head: headSha,
+		earlier: earlierFindings,
+	});
 	if (!revalidated.valid) {
 		report = incomplete(
 			report,
@@ -206,68 +449,69 @@ if (report.valid) {
 	}
 }
 
-const blocking = report.valid ? report.result.findings.filter(finding => finding.blocking) : [];
-const comments = [];
-const unanchored = [];
+const state = await readReviewState(github, { repository, pullNumber });
 
-if (blocking.length > 0) {
-	const lines = addressableLines(
-		await request(pullPath, { accept: 'application/vnd.github.diff' }),
-	);
-	for (const finding of blocking) {
-		const addressable = lines.get(finding.location.path);
-		const exact = addressable?.has(finding.location.line) ? finding.location.line : undefined;
-		const line = exact ?? [...(addressable ?? [])].sort((first, second) => first - second)[0];
-		if (line === undefined) {
-			unanchored.push(finding);
-			continue;
-		}
-		comments.push({
-			path: finding.location.path,
-			line,
-			side: 'RIGHT',
-			body: findingComment(finding),
-		});
-	}
+// An invalid report says nothing about earlier findings, so the summary keeps carrying the ones
+// the previous summary listed instead of dropping them.
+let planned = emptyPlan(state.summary?.ledger ?? []);
+if (report.valid) {
+	const lines =
+		report.result.findings.length > 0
+			? addressableLines(await github.request(pullPath, { accept: 'application/vnd.github.diff' }))
+			: new Map();
+	planned = plan(report.result, earlierFindings, state, lines);
 }
 
-let body = renderSummary(report);
-if (unanchored.length > 0) {
-	body += `\n\n### Blocking findings without a diff position\n\n${unanchored
-		.map(finding => `- ${sanitize(finding.title)} in \`${sanitize(finding.location.path)}\``)
-		.join('\n')}`;
-}
+const body = renderSummary(report, planned);
 
-// Each execution decides the check from its own result, never from a review already on the pull
-// request: any workflow allowed to write reviews could have posted one, and an earlier
-// incomplete review must not stop a retry from publishing its conversations. Only a repeated
-// delivery of this same report, such as a re-run of this job alone, is left unpublished.
-const reviews = await request(`${pullPath}/reviews?per_page=100`);
-const alreadyPublished = reviews.some(
-	review => review.user?.login === 'github-actions[bot]' && review.body === body,
+// Conversations first and the summary last: a run cancelled in between leaves every finding
+// either in a conversation or in the previous summary's ledger, so the next review still
+// rechecks it.
+if (planned.comments.length > 0) {
+	await github.request(`${pullPath}/reviews`, {
+		method: 'POST',
+		body: {
+			commit_id: headSha,
+			event: 'COMMENT',
+			body: `AI review of ${commit}: ${planned.comments.length} new comment(s). The summary comment has the rest.`,
+			comments: planned.comments,
+		},
+	});
+}
+// One at a time, so a failure leaves the replies before it posted and a re-run skips them.
+for (const reply of planned.replies) {
+	await github.request(`${pullPath}/comments/${reply.thread.commentId}/replies`, {
+		method: 'POST',
+		body: { body: reply.body },
+	});
+}
+console.log(
+	`Posted ${planned.comments.length} new comment(s) and ${planned.replies.length} ` +
+		`reply(ies) for ${headSha}.`,
 );
 
-if (alreadyPublished) {
-	console.log(`This report for ${headSha} is already published; not publishing it again.`);
-} else {
-	await request(`${pullPath}/reviews`, {
+if (state.summary === null) {
+	const created = await github.request(`/repos/${repository}/issues/${pullNumber}/comments`, {
 		method: 'POST',
-		body: JSON.stringify({ commit_id: headSha, event: 'COMMENT', body, comments }),
+		body: { body },
 	});
-	console.log(`Published the review for ${headSha} with ${comments.length} conversation(s).`);
+	console.log(`Created the summary comment: ${created.html_url}`);
+} else if (state.summary.body === body) {
+	console.log(`The summary comment already shows this report: ${state.summary.url}`);
+} else {
+	await github.request(`/repos/${repository}/issues/comments/${state.summary.id}`, {
+		method: 'PATCH',
+		body: { body },
+	});
+	console.log(`Updated the summary comment: ${state.summary.url}`);
 }
 
-appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`);
+appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n${renderOperatorNotes(report)}\n`);
 
-// Every blocking finding needs a conversation that someone has to resolve. One that reached
-// none would leave part of the merge authority unenforced, so the check fails even when other
-// blocking findings were published.
-const unenforceable = unanchored.length > 0;
-if (unenforceable) {
-	console.log(`${unanchored.length} blocking finding(s) could not be published as a conversation.`);
-}
-
+// The workflow turns the outcome into the AI Review / required status. The job also fails for an
+// outcome that holds the merge, so the run itself shows it.
 console.log(`Outcome: ${report.outcome}.`);
-if (process.env.GITHUB_OUTPUT)
-	appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${report.outcome}\n`);
-process.exit(report.outcome === 'incomplete' || unenforceable ? 1 : 0);
+if (process.env.GITHUB_OUTPUT) {
+	appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${report.outcome}\npublished=true\n`);
+}
+process.exit(report.outcome === 'blocked' || report.outcome === 'incomplete' ? 1 : 0);

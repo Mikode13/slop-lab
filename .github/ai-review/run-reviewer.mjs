@@ -11,7 +11,7 @@
 
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { validateResult } from './contract.mjs';
@@ -26,6 +26,7 @@ const repository = environment('REPOSITORY');
 const baseSha = environment('BASE_SHA');
 const headSha = environment('HEAD_SHA');
 const workDirectory = environment('OUTPUT_DIR');
+const evidenceDirectory = environment('EVIDENCE_DIR');
 
 const harnessPackage = process.env.HARNESS_PACKAGE ?? '@mikode13/harness-cli@1.1.0';
 const reviewerCommand = process.env.REVIEWER_COMMAND ?? 'npx';
@@ -33,7 +34,11 @@ const model = process.env.REVIEW_MODEL ?? 'opus';
 const effort = process.env.REVIEW_EFFORT ?? 'high';
 const timeoutMs = Number(process.env.REVIEW_TIMEOUT_SECONDS ?? 600) * 1000;
 
-const expected = { repository, base: baseSha, head: headSha };
+// The result has to recheck exactly the earlier findings the prompt supplied, and the publisher
+// revalidates it against the same list, so the list travels in the report.
+const earlierPath = join(evidenceDirectory, 'earlier-findings.json');
+const earlier = existsSync(earlierPath) ? JSON.parse(readFileSync(earlierPath, 'utf8')) : [];
+const expected = { repository, base: baseSha, head: headSha, earlier };
 const usage = [];
 const bytes = text => Buffer.byteLength(text, 'utf8');
 
@@ -165,11 +170,11 @@ function interpret(turn) {
 const repairPrompt = (
 	reply,
 	errors,
-) => `Your previous reply was rejected because it did not satisfy the version 1
+) => `Your previous reply was rejected because it did not satisfy the version 2
 mikode-review result contract. Return the same review as a valid result object.
 
-Do not review anything again, do not change a severity, an origin, a blocking status, or an
-outcome to make validation pass, and do not invent findings or evidence you did not already
+Do not review anything again, do not change a severity, an origin, a relevance, a blocking
+status, a recheck status, or an outcome to make validation pass, and do not invent findings or evidence you did not already
 have. Correct only the structure, and keep "scope" exactly
 {"repository": "${repository}", "base": "${baseSha}", "head": "${headSha}", "paths": [...]}.
 If the review underlying the previous reply cannot be expressed as a valid result, return a
@@ -261,6 +266,7 @@ const report = {
 	repairReasons,
 	failedRepairReasons,
 	usage,
+	earlier,
 	result,
 };
 
