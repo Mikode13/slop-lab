@@ -153,10 +153,7 @@ test('the runner never calls the provider for a build that does not fit', () => 
 	assert.match(report.errors[0], /src\/large\.js/u);
 });
 
-test('the reasons a reply needed repair are recorded even when the repair succeeds', () => {
-	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
-	build(directories);
-
+function cleanResult() {
 	const repository = 'Mikode13/slop-lab';
 	const clean = {
 		version: 1,
@@ -182,22 +179,19 @@ test('the reasons a reply needed repair are recorded even when the repair succee
 		follow_up: [],
 	};
 	assert.deepEqual(validateResult(clean, { repository, base, head }).errors, []);
+	return clean;
+}
 
-	// Answers the first turn with an object the contract rejects, and the repair with a valid one.
+/**
+ * Builds a prompt that fits, runs the runner against a stand-in reviewer whose module body is
+ * `script`, and returns the run and the report it wrote.
+ */
+function runReviewer(script) {
+	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
+	build(directories);
+
 	const reviewer = join(directories.work, 'reviewer.mjs');
-	const answered = join(directories.work, 'answered');
-	write(
-		reviewer,
-		[
-			'#!/usr/bin/env node',
-			"import { existsSync, writeFileSync } from 'node:fs';",
-			`const first = !existsSync(${JSON.stringify(answered)});`,
-			`writeFileSync(${JSON.stringify(answered)}, '');`,
-			`const response = first ? '{"version": 1}' : ${JSON.stringify(JSON.stringify(clean))};`,
-			'process.stdout.write(JSON.stringify({ response, inputTokens: 1, outputTokens: 1, duration: 1 }));',
-			'',
-		].join('\n'),
-	);
+	write(reviewer, `#!/usr/bin/env node\n${script}\n`);
 	chmodSync(reviewer, 0o755);
 
 	const run = spawnSync(process.execPath, [runner], {
@@ -210,8 +204,49 @@ test('the reasons a reply needed repair are recorded even when the repair succee
 	assert.equal(run.status, 0, run.stderr);
 
 	const report = JSON.parse(readFileSync(join(directories.work, 'review-report.json'), 'utf8'));
+	return { run, report };
+}
+
+/** A reviewer that answers its turns in order, repeating the last reply. It runs in the work directory. */
+const answering = (...replies) =>
+	[
+		"import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
+		"const turn = existsSync('turns') ? Number(readFileSync('turns', 'utf8')) : 0;",
+		"writeFileSync('turns', String(turn + 1));",
+		`const response = ${JSON.stringify(replies)}[Math.min(turn, ${replies.length - 1})];`,
+		'process.stdout.write(JSON.stringify({ response, inputTokens: 1, outputTokens: 1, duration: 1 }));',
+	].join('\n');
+
+test('the reasons a reply needed repair are recorded even when the repair succeeds', () => {
+	const { run, report } = runReviewer(answering('{"version": 1}', JSON.stringify(cleanResult())));
+
 	assert.equal(report.outcome, 'clean');
 	assert.equal(report.attempts, 2);
 	assert.ok(report.repairReasons.length > 0);
+	assert.deepEqual(report.failedRepairReasons, []);
 	assert.match(run.stdout, /Rejected before repair: /u);
+});
+
+test('a reply that still fails validation after its repair gives the pull request one plain reason', () => {
+	const { run, report } = runReviewer(answering('{"version": 1}'));
+
+	assert.equal(report.outcome, 'incomplete');
+	assert.deepEqual(report.errors, [
+		"The reviewer's reply did not satisfy the result contract, and one repair did not produce a valid result.",
+	]);
+	assert.ok(report.repairReasons.length > 0);
+	assert.ok(report.failedRepairReasons.length > 0);
+	assert.match(run.stdout, /Rejected after repair: /u);
+});
+
+test('the reviewer progress is printed with workflow commands switched off', () => {
+	const { run, report } = runReviewer(
+		"process.stderr.write('thinking\\n::warning::forged annotation\\n');\nprocess.exit(1);",
+	);
+
+	assert.equal(report.outcome, 'incomplete');
+	assert.match(
+		run.stdout,
+		/^::stop-commands::([\w-]+)\nReviewer progress \(last lines\):\nthinking\n::warning::forged annotation\n::\1::$/mu,
+	);
 });

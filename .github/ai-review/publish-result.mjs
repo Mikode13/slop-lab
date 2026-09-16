@@ -7,6 +7,11 @@
  * automated review standard requires: `clean` and `blocked` both completed, so the check
  * succeeds for both, and only the unresolved conversations raised for blocking findings stop
  * the merge. `incomplete` fails the check.
+ *
+ * A finding is shown where a person reviewing by hand would put it: on its line of the diff.
+ * A blocking finding's conversation stays open. A non-blocking finding is commented the same
+ * way and then resolved, so it is visible on its line without holding the merge back. Only what
+ * has no line in the diff, and the verdict, go in the summary.
  */
 
 import { appendFileSync } from 'node:fs';
@@ -27,7 +32,10 @@ const token = environment('GITHUB_TOKEN');
 const analyzeResult = environment('ANALYZE_RESULT');
 
 const marker = `<!-- mikode-ai-review:${headSha} -->`;
+// Marks a non-blocking comment, which is the only kind of thread this job ever resolves.
+const noteMarker = `<!-- mikode-ai-review-note:${headSha} -->`;
 const pullPath = `/repos/${repository}/pulls/${pullNumber}`;
+const botLogins = new Set(['github-actions', 'github-actions[bot]']);
 
 /** Neutralizes reviewer-authored text: no mentions, no raw HTML, no hidden comment markers. */
 const sanitize = value =>
@@ -54,6 +62,17 @@ async function request(
 	});
 	if (!response.ok) throw new Error(`${method} ${path} failed with ${response.status}`);
 	return accept.endsWith('diff') ? response.text() : response.json();
+}
+
+async function graphql(query, variables) {
+	const response = await request('/graphql', {
+		method: 'POST',
+		body: JSON.stringify({ query, variables }),
+	});
+	if (response.errors?.length) {
+		throw new Error(response.errors.map(error => error.message).join('; '));
+	}
+	return response.data;
 }
 
 /**
@@ -86,121 +105,197 @@ function addressableLines(diff) {
 	return files;
 }
 
-const describeUsage = usage =>
-	(usage ?? [])
-		.map(entry => `${entry.inputTokens ?? '?'} in / ${entry.outputTokens ?? '?'} out`)
-		.join('; ') || 'not reported';
+const origins = {
+	introduced: 'introduced',
+	pre_existing: 'pre-existing',
+	unknown: 'unknown origin',
+};
 
-/** Folds content a reader rarely needs below a one-line label. */
-const folded = (label, items) => [
+const heading = finding =>
+	`**[${finding.severity ?? 'UNCLASSIFIED'}] ${sanitize(finding.title)}** · ` +
+	`${origins[finding.origin] ?? sanitize(finding.origin)} · ` +
+	`${finding.blocking ? 'blocking' : 'non-blocking'}`;
+
+const where = location =>
+	location?.line ? `${location.path}:${location.line}` : (location?.path ?? 'no file');
+
+/** Follow-up items that start with the ids of findings, such as "F1: ..." or "F2, F3: ...". */
+function splitFollowUp(items, findings) {
+	const ids = new Set(findings.map(finding => finding.id));
+	const byFinding = new Map();
+	const general = [];
+
+	for (const item of items) {
+		const prefixed = /^([^:]{1,80}):\s*(.+)$/su.exec(item);
+		const named = prefixed ? prefixed[1].split(/[\s,]+/u).filter(Boolean) : [];
+		if (named.length > 0 && named.every(id => ids.has(id))) {
+			for (const id of named) byFinding.set(id, [...(byFinding.get(id) ?? []), prefixed[2]]);
+		} else {
+			general.push(item);
+		}
+	}
+	return { byFinding, general };
+}
+
+const reasoning = (finding, followUp) => [
+	sanitize(finding.problem),
 	'',
-	`<details><summary>${label}</summary>`,
+	`**Consequence.** ${sanitize(finding.consequence)}`,
 	'',
-	...items,
-	'',
-	'</details>',
+	`**Direction.** ${sanitize(finding.recommended_direction)}`,
+	...followUp.flatMap(item => ['', `**Follow-up.** ${sanitize(item)}`]),
 ];
 
-/**
- * Names every finding on one line. The reasoning of a finding that opened a conversation lives
- * only in that conversation, so the summary never repeats it; the reasoning of the others is
- * folded below the list.
- */
-function renderSummary(report, conversations) {
-	const lines = [marker, `## AI review: ${report.outcome}`, '', `Reviewed commit: ${headSha}`, ''];
+function findingComment(finding, followUp, reportedLine) {
+	return [
+		heading(finding),
+		'',
+		...(reportedLine ? [`Reported for line ${reportedLine}, which is outside the diff.`, ''] : []),
+		...reasoning(finding, followUp),
+		'',
+		finding.blocking
+			? 'Resolve this conversation after correcting it, or record why it does not apply.'
+			: `Non-blocking, so it was resolved when it was published. Reopen it to discuss it.\n${noteMarker}`,
+	].join('\n');
+}
 
-	if (report.valid) {
-		const { findings, perspectives } = report.result;
-		const followUp = report.result.follow_up;
+const summaryEntry = (finding, followUp) =>
+	`- ${heading(finding)} · \`${sanitize(where(finding.location))}\`. ` +
+	reasoning(finding, followUp)
+		.filter(text => text !== '')
+		.join(' ');
 
-		lines.push('### Findings', '');
-		if (findings.length === 0) lines.push('No verified findings.');
-		for (const finding of findings) {
-			const where = finding.location.line
-				? `${finding.location.path}:${finding.location.line}`
-				: finding.location.path;
-			const conversation = conversations.has(finding.id) ? ', see its conversation' : '';
-			lines.push(
-				`- **[${finding.severity}] ${sanitize(finding.title)}** — ${finding.origin}, ` +
-					`${finding.blocking ? 'blocking' : 'non-blocking'}, at \`${sanitize(where)}\`` +
-					conversation,
-			);
-		}
+const section = (title, items) => (items.length > 0 ? ['', `### ${title}`, '', ...items] : []);
 
-		const withoutConversation = findings.filter(finding => !conversations.has(finding.id));
-		if (withoutConversation.length > 0) {
-			lines.push(
-				...folded(
-					'Findings without a conversation',
-					withoutConversation.map(
-						finding =>
-							`- **${sanitize(finding.title)}** — ${sanitize(finding.problem)} ` +
-							`Consequence: ${sanitize(finding.consequence)} ` +
-							`Direction: ${sanitize(finding.recommended_direction)}`,
-					),
-				),
-			);
-		}
+function formatDuration(usage) {
+	const seconds = (usage ?? []).reduce((total, entry) => total + (entry.duration ?? 0), 0);
+	if (seconds <= 0) return null;
+	const rounded = Math.round(seconds);
+	return rounded < 60 ? `${rounded} s` : `${Math.floor(rounded / 60)} min ${rounded % 60} s`;
+}
 
-		lines.push('', '### Perspectives', '');
-		for (const key of perspectiveKeys) {
-			lines.push(`- **${key}** — ${perspectives[key].coverage} (${perspectives[key].depth})`);
-		}
-		lines.push(
-			...folded(
-				'How each perspective was reviewed',
-				perspectiveKeys.map(key => `- **${key}**: ${sanitize(perspectives[key].reason)}`),
-			),
-		);
-
-		if (followUp.length > 0) {
-			lines.push(
-				...folded(
-					`Follow-up (${followUp.length})`,
-					followUp.map(item => `- ${sanitize(item)}`),
-				),
-			);
-		}
-	} else {
-		lines.push(
-			'The review is incomplete: its execution or its result could not be trusted.',
+function verdict(report, placed) {
+	if (!report.valid) {
+		return [
+			'Incomplete: the review could not be completed or its result could not be trusted, so ' +
+				'it is not evidence that the change is safe.',
 			'',
 			...(report.errors ?? []).map(error => `- ${sanitize(error)}`),
-			'',
-			'This is not a clean review, and it is not evidence that the change is safe.',
-		);
+		];
 	}
 
-	if ((report.omissions ?? []).length > 0) {
+	const lines = [];
+	const open = placed.blocking;
+	if (report.outcome === 'incomplete') {
+		lines.push(
+			'Incomplete: the review could not cover everything it needed, so it is not evidence ' +
+				'that the change is safe.',
+		);
+	} else if (open.length > 0 || placed.unanchored.length > 0) {
+		lines.push(
+			`Not ready to merge: ${open.length + placed.unanchored.length} blocking finding(s).`,
+		);
+	} else {
+		lines.push('No blocking findings.');
+	}
+
+	if (open.length > 0) {
 		lines.push(
 			'',
-			'### Context not supplied to the reviewer',
-			'',
-			...report.omissions.map(omission => `- ${sanitize(omission)}`),
+			...open.map(
+				({ finding, line }) =>
+					`- **[${finding.severity ?? 'UNCLASSIFIED'}] ${sanitize(finding.title)}** ` +
+					`(\`${sanitize(finding.location.path)}:${line}\`)`,
+			),
 		);
 	}
+	if (placed.notes.length > 0) {
+		lines.push(
+			'',
+			`${placed.notes.length} non-blocking finding(s) noted on their lines and resolved.`,
+		);
+	}
+	return lines;
+}
 
-	lines.push(
+function renderSummary(report, placed, followUp) {
+	const result = report.valid ? report.result : null;
+	const byFinding = finding => followUp.byFinding.get(finding.id) ?? [];
+
+	const lines = [
+		marker,
+		`## AI review: ${report.outcome}`,
+		'',
+		...verdict(report, placed),
+		...section(
+			'Blocking findings without a diff position',
+			placed.unanchored.map(finding => summaryEntry(finding, byFinding(finding))),
+		),
+		...section(
+			'Findings without a line in the diff',
+			placed.withoutLine.map(finding => summaryEntry(finding, byFinding(finding))),
+		),
+		...section(
+			'Questions for the author',
+			(result?.questions ?? []).map(
+				question =>
+					`- ${sanitize(question.question)}` +
+					(question.prevents_completion ? ' This question kept the review from completing.' : ''),
+			),
+		),
+		...section(
+			'Limitations',
+			(result?.limitations ?? []).map(
+				limitation => `- ${sanitize(limitation.reason)} Needed: ${sanitize(limitation.needed)}`,
+			),
+		),
+		...section(
+			'Follow-up',
+			followUp.general.map(item => `- ${sanitize(item)}`),
+		),
+		...section(
+			'Context not supplied to the reviewer',
+			(report.omissions ?? []).map(omission => `- ${sanitize(omission)}`),
+		),
 		'',
 		'---',
-		`Automated pilot, ${report.attempts ?? 0} provider turn(s), ${describeUsage(report.usage)}.`,
-		'A completed review is a second opinion, not proof that the change is correct.',
-	);
+		[
+			`Commit ${headSha.slice(0, 7)}`,
+			`${report.attempts ?? 0} provider turn(s)`,
+			formatDuration(report.usage),
+		]
+			.filter(Boolean)
+			.join(' · '),
+	];
 	return lines.join('\n');
 }
 
-const findingComment = finding =>
-	[
-		`**[${finding.severity}] ${sanitize(finding.title)}**`,
-		'',
-		sanitize(finding.problem),
-		'',
-		`**Consequence.** ${sanitize(finding.consequence)}`,
-		'',
-		`**Direction.** ${sanitize(finding.recommended_direction)}`,
-		'',
-		'Resolve this conversation after correcting it, or record why it does not apply.',
+/** What only the people running the pilot need: coverage and why replies were rejected. */
+function renderOperatorNotes(report) {
+	const reasons = key => (Array.isArray(report[key]) ? report[key] : []);
+	const perspectives = report.valid ? report.result.perspectives : null;
+
+	return [
+		...section(
+			'Perspectives',
+			perspectives
+				? perspectiveKeys.map(
+						key =>
+							`- **${key}** — ${perspectives[key].coverage} (${perspectives[key].depth}): ` +
+							sanitize(perspectives[key].reason),
+					)
+				: [],
+		),
+		...section(
+			'Reasons the first reply was rejected',
+			reasons('repairReasons').map(reason => `- ${sanitize(reason)}`),
+		),
+		...section(
+			'Reasons the repair was rejected',
+			reasons('failedRepairReasons').map(reason => `- ${sanitize(reason)}`),
+		),
 	].join('\n');
+}
 
 const incomplete = (report, errors) => ({
 	...report,
@@ -238,39 +333,52 @@ if (report.valid) {
 	}
 }
 
-const blocking = report.valid ? report.result.findings.filter(finding => finding.blocking) : [];
+const findings = report.valid ? report.result.findings : [];
+const followUp = splitFollowUp(report.valid ? report.result.follow_up : [], findings);
+const placed = { blocking: [], notes: [], withoutLine: [], unanchored: [] };
 const comments = [];
-const conversations = new Set();
-const unanchored = [];
 
-if (blocking.length > 0) {
+if (findings.length > 0) {
 	const lines = addressableLines(
 		await request(pullPath, { accept: 'application/vnd.github.diff' }),
 	);
-	for (const finding of blocking) {
-		const addressable = lines.get(finding.location.path);
+	for (const finding of findings) {
+		const addressable = lines.get(finding.location?.path);
 		const exact = addressable?.has(finding.location.line) ? finding.location.line : undefined;
-		const line = exact ?? [...(addressable ?? [])].sort((first, second) => first - second)[0];
-		if (line === undefined) {
-			unanchored.push(finding);
-			continue;
+		const followUpItems = followUp.byFinding.get(finding.id) ?? [];
+
+		if (finding.blocking) {
+			// A blocking finding needs a conversation even when its exact line is outside the diff,
+			// so it moves to the file's first commentable line and says which line it means.
+			const line = exact ?? [...(addressable ?? [])].sort((first, second) => first - second)[0];
+			if (line === undefined) {
+				placed.unanchored.push(finding);
+				continue;
+			}
+			const reportedLine = exact === undefined ? finding.location.line : null;
+			placed.blocking.push({ finding, line });
+			comments.push({
+				path: finding.location.path,
+				line,
+				side: 'RIGHT',
+				body: findingComment(finding, followUpItems, reportedLine),
+			});
+		} else if (exact === undefined) {
+			// A comment on another line would point at code the finding is not about.
+			placed.withoutLine.push(finding);
+		} else {
+			placed.notes.push(finding);
+			comments.push({
+				path: finding.location.path,
+				line: exact,
+				side: 'RIGHT',
+				body: findingComment(finding, followUpItems, null),
+			});
 		}
-		conversations.add(finding.id);
-		comments.push({
-			path: finding.location.path,
-			line,
-			side: 'RIGHT',
-			body: findingComment(finding),
-		});
 	}
 }
 
-let body = renderSummary(report, conversations);
-if (unanchored.length > 0) {
-	body += `\n\n### Blocking findings without a diff position\n\n${unanchored
-		.map(finding => `- ${sanitize(finding.title)} in \`${sanitize(finding.location.path)}\``)
-		.join('\n')}`;
-}
+const body = renderSummary(report, placed, followUp);
 
 // Each execution decides the check from its own result, never from a review already on the pull
 // request: any workflow allowed to write reviews could have posted one, and an earlier
@@ -288,29 +396,87 @@ if (alreadyPublished) {
 		method: 'POST',
 		body: JSON.stringify({ commit_id: headSha, event: 'COMMENT', body, comments }),
 	});
-	console.log(`Published the review for ${headSha} with ${comments.length} conversation(s).`);
+	console.log(`Published the review for ${headSha} with ${comments.length} comment(s).`);
 }
 
-// Why a first reply failed validation matters for tuning the contract, not for the pull request,
-// so only the job summary carries it.
-const repairReasons = Array.isArray(report.repairReasons) ? report.repairReasons : [];
-const repairNotes =
-	repairReasons.length > 0
-		? `\n\n### Reasons the first reply was rejected\n\n${repairReasons
-				.map(reason => `- ${sanitize(reason)}`)
-				.join('\n')}`
-		: '';
-appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}${repairNotes}\n`);
+// A non-blocking comment left open would hold the merge back like a blocking one, because the
+// ruleset requires every conversation to be resolved. If they cannot be resolved, the check
+// fails rather than letting a note pass for a blocker.
+let notesLeftOpen = false;
+if (placed.notes.length > 0) {
+	const [owner, name] = repository.split('/');
+	try {
+		const data = await graphql(
+			`
+				query ($owner: String!, $name: String!, $number: Int!) {
+					repository(owner: $owner, name: $name) {
+						pullRequest(number: $number) {
+							reviewThreads(first: 100) {
+								nodes {
+									id
+									isResolved
+									comments(first: 1) {
+										nodes {
+											body
+											author {
+												login
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			`,
+			{ owner, name, number: Number(pullNumber) },
+		);
+		const open = data.repository.pullRequest.reviewThreads.nodes.filter(thread => {
+			const first = thread.comments.nodes[0];
+			return (
+				!thread.isResolved &&
+				botLogins.has(first?.author?.login) &&
+				(first?.body ?? '').includes(noteMarker)
+			);
+		});
+		await Promise.all(
+			open.map(thread =>
+				graphql(
+					`
+						mutation ($threadId: ID!) {
+							resolveReviewThread(input: { threadId: $threadId }) {
+								thread {
+									id
+								}
+							}
+						}
+					`,
+					{ threadId: thread.id },
+				),
+			),
+		);
+		console.log(`Resolved ${open.length} non-blocking comment(s).`);
+	} catch (error) {
+		notesLeftOpen = true;
+		console.log(
+			`The non-blocking comments could not be resolved: ${sanitize(error instanceof Error ? error.message : error)}`,
+		);
+	}
+}
+
+appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n${renderOperatorNotes(report)}\n`);
 
 // Every blocking finding needs a conversation that someone has to resolve. One that reached
 // none would leave part of the merge authority unenforced, so the check fails even when other
 // blocking findings were published.
-const unenforceable = unanchored.length > 0;
+const unenforceable = placed.unanchored.length > 0;
 if (unenforceable) {
-	console.log(`${unanchored.length} blocking finding(s) could not be published as a conversation.`);
+	console.log(
+		`${placed.unanchored.length} blocking finding(s) could not be published as a conversation.`,
+	);
 }
 
 console.log(`Outcome: ${report.outcome}.`);
 if (process.env.GITHUB_OUTPUT)
 	appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${report.outcome}\n`);
-process.exit(report.outcome === 'incomplete' || unenforceable ? 1 : 0);
+process.exit(report.outcome === 'incomplete' || unenforceable || notesLeftOpen ? 1 : 0);

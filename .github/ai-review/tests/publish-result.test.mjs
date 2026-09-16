@@ -47,7 +47,15 @@ const blockingFinding = (id, path, line) => ({
 	],
 });
 
-const blockedResult = findings => ({
+const note = (id, path, line) => ({
+	...blockingFinding(id, path, line),
+	severity: 'SUGGESTION',
+	blocking: false,
+	title: `Note ${id}`,
+	problem: `A smaller issue ${id} remains.`,
+});
+
+const blockedResult = (findings, overrides) => ({
 	version: 1,
 	scope: { repository, base, head, paths: ['src/changed.js'] },
 	outcome: 'blocked',
@@ -75,21 +83,23 @@ const blockedResult = findings => ({
 	questions: [],
 	context: [],
 	follow_up: [],
+	...overrides,
 });
 
 /**
- * Runs the publisher on a valid blocked result, with `reviews` already on the pull request and
- * `report` fields added to the analysis report, and returns its exit status, posted review, and
- * job summary.
+ * Runs the publisher on a valid blocked result with `findings` and any `result` fields replaced,
+ * `reviews` already on the pull request, `report` fields added to the analysis report, and `env`
+ * passed to the stub. Returns its exit status and output, the posted review, the job summary, and
+ * the threads it resolved.
  */
-function publish(findings, { reviews = [], report = {} } = {}) {
-	const result = blockedResult(findings);
+function publish(findings, { reviews = [], report = {}, result: fields = {}, env = {} } = {}) {
+	const result = blockedResult(findings, fields);
 	assert.deepEqual(validateResult(result, { repository, base, head }).errors, []);
 
 	const directory = mkdtempSync(join(tmpdir(), 'ai-review-publish-'));
-	const posted = join(directory, 'posted.json');
-	writeFileSync(join(directory, 'change.diff'), diff);
-	writeFileSync(join(directory, 'reviews.json'), JSON.stringify(reviews));
+	const file = name => join(directory, name);
+	writeFileSync(file('change.diff'), diff);
+	writeFileSync(file('reviews.json'), JSON.stringify(reviews));
 
 	const run = spawnSync(process.execPath, ['--import', stub, publisher], {
 		encoding: 'utf8',
@@ -97,29 +107,37 @@ function publish(findings, { reviews = [], report = {} } = {}) {
 			...process.env,
 			ANALYZE_RESULT: 'success',
 			BASE_SHA: base,
-			GITHUB_STEP_SUMMARY: join(directory, 'summary.md'),
+			GITHUB_STEP_SUMMARY: file('summary.md'),
 			GITHUB_TOKEN: 'test-token',
 			HEAD_SHA: head,
 			PR_NUMBER: '7',
 			REPORT: JSON.stringify({ valid: true, outcome: 'blocked', errors: [], result, ...report }),
 			REPOSITORY: repository,
-			STUB_DIFF: join(directory, 'change.diff'),
-			STUB_POSTED: posted,
-			STUB_REVIEWS: join(directory, 'reviews.json'),
+			STUB_DIFF: file('change.diff'),
+			STUB_POSTED: file('posted.json'),
+			STUB_RESOLVED: file('resolved.json'),
+			STUB_REVIEWS: file('reviews.json'),
+			...env,
 		},
 	});
 
-	const review = existsSync(posted) ? JSON.parse(readFileSync(posted, 'utf8')) : null;
-	const summaryPath = join(directory, 'summary.md');
-	const summary = existsSync(summaryPath) ? readFileSync(summaryPath, 'utf8') : '';
-	return { status: run.status, stdout: run.stdout, review, summary };
+	const read = (name, fallback) =>
+		existsSync(file(name)) ? readFileSync(file(name), 'utf8') : fallback;
+	return {
+		status: run.status,
+		stdout: run.stdout,
+		review: JSON.parse(read('posted.json', 'null')),
+		summary: read('summary.md', ''),
+		resolved: JSON.parse(read('resolved.json', '[]')),
+	};
 }
 
 test('a blocked review whose blocking findings all reach a conversation passes the check', () => {
-	const { status, review } = publish([blockingFinding('F1', 'src/changed.js', 2)]);
+	const { status, review, resolved } = publish([blockingFinding('F1', 'src/changed.js', 2)]);
 
 	assert.equal(status, 0);
 	assert.equal(review.comments.length, 1);
+	assert.deepEqual(resolved, []);
 });
 
 test('a blocking finding without a diff position fails the check even when another one is published', () => {
@@ -168,37 +186,96 @@ test('a copy of the report posted by anyone else does not stop the publication',
 	assert.equal(review.comments.length, 1);
 });
 
-test('the summary names a finding with a conversation without repeating its reasoning', () => {
+test('the summary lists a blocking finding with its line and leaves the reasoning to its comment', () => {
 	const { review } = publish([blockingFinding('F1', 'src/changed.js', 2)]);
 
-	assert.match(
-		review.body,
-		/Blocking finding F1\*\* — introduced, blocking, at `src\/changed\.js:2`, see its conversation/u,
-	);
+	assert.match(review.body, /Not ready to merge: 1 blocking finding\(s\)\./u);
+	assert.match(review.body, /\*\*\[BLOCKER\] Blocking finding F1\*\* \(`src\/changed\.js:2`\)/u);
 	assert.doesNotMatch(review.body, /The change introduces a defect\./u);
 	assert.match(review.comments[0].body, /The change introduces a defect\./u);
 });
 
-test('a finding without a conversation keeps its reasoning in the summary', () => {
-	const suggestion = {
-		...blockingFinding('F2', 'src/changed.js', 3),
-		severity: 'SUGGESTION',
-		blocking: false,
-		problem: 'A smaller issue remains.',
-	};
-	const { review } = publish([blockingFinding('F1', 'src/changed.js', 2), suggestion]);
+test('a non-blocking finding on a diff line is commented there and resolved', () => {
+	const { status, review, resolved } = publish([
+		blockingFinding('F1', 'src/changed.js', 2),
+		note('F2', 'src/changed.js', 3),
+	]);
 
-	assert.equal(review.comments.length, 1);
-	assert.match(review.body, /<details><summary>Findings without a conversation<\/summary>/u);
-	assert.match(review.body, /A smaller issue remains\./u);
+	assert.equal(status, 0);
+	assert.equal(review.comments.length, 2);
+	assert.equal(review.comments[1].line, 3);
+	assert.match(review.comments[1].body, /A smaller issue F2 remains\./u);
+	assert.deepEqual(resolved, ['thread-1']);
+	assert.doesNotMatch(review.body, /A smaller issue F2 remains\./u);
+	assert.match(review.body, /1 non-blocking finding\(s\) noted on their lines and resolved\./u);
 });
 
-test('the reasons a first reply was rejected reach the job summary, not the pull request', () => {
-	const { review, summary } = publish([blockingFinding('F1', 'src/changed.js', 2)], {
-		report: { attempts: 2, repairReasons: ['findings[0].severity is not a known severity.'] },
+test('a finding with no line in the diff is described in the summary instead', () => {
+	const { review, resolved } = publish([
+		blockingFinding('F1', 'src/changed.js', 2),
+		note('F3', 'src/changed.js', 40),
+	]);
+
+	assert.equal(review.comments.length, 1);
+	assert.deepEqual(resolved, []);
+	assert.match(review.body, /### Findings without a line in the diff/u);
+	assert.match(review.body, /`src\/changed\.js:40`\. A smaller issue F3 remains\./u);
+});
+
+test('follow-up that names a finding joins its comment, and the rest stays in the summary', () => {
+	const { review } = publish([blockingFinding('F1', 'src/changed.js', 2)], {
+		result: { follow_up: ['F1: Add a regression test.', 'Re-run the checks.'] },
 	});
 
-	assert.match(summary, /Reasons the first reply was rejected/u);
+	assert.match(review.comments[0].body, /\*\*Follow-up\.\*\* Add a regression test\./u);
+	assert.doesNotMatch(review.body, /Add a regression test/u);
+	assert.match(review.body, /### Follow-up\n\n- Re-run the checks\./u);
+});
+
+test('the summary asks the questions and leaves the perspectives to the job summary', () => {
+	const { review, summary } = publish([blockingFinding('F1', 'src/changed.js', 2)], {
+		result: {
+			questions: [
+				{
+					question: 'Is the wider rule intended?',
+					perspective: 'intent_scope',
+					prevents_completion: false,
+				},
+			],
+		},
+	});
+
+	assert.match(review.body, /### Questions for the author\n\n- Is the wider rule intended\?/u);
+	assert.doesNotMatch(review.body, /Perspectives|correctness_regression/u);
+	assert.match(summary, /### Perspectives/u);
+	assert.match(summary, /correctness_regression/u);
+});
+
+test('the reasons replies were rejected reach the job summary, not the pull request', () => {
+	const { review, summary } = publish([blockingFinding('F1', 'src/changed.js', 2)], {
+		report: {
+			attempts: 2,
+			repairReasons: ['findings[0].severity is not a known severity.'],
+			failedRepairReasons: ['scope is missing.'],
+		},
+	});
+
+	assert.match(summary, /### Reasons the first reply was rejected/u);
 	assert.match(summary, /findings\[0\]\.severity is not a known severity\./u);
-	assert.doesNotMatch(review.body, /Reasons the first reply was rejected/u);
+	assert.match(summary, /### Reasons the repair was rejected\n\n- scope is missing\./u);
+	assert.doesNotMatch(review.body, /Reasons the/u);
+});
+
+test('non-blocking comments that cannot be resolved fail the check', () => {
+	const { status, stdout, review } = publish(
+		[blockingFinding('F1', 'src/changed.js', 2), note('F2', 'src/changed.js', 3)],
+		{ env: { STUB_GRAPHQL_ERROR: 'Resource not accessible by integration' } },
+	);
+
+	assert.equal(status, 1);
+	assert.equal(review.comments.length, 2);
+	assert.match(
+		stdout,
+		/The non-blocking comments could not be resolved: Resource not accessible by integration/u,
+	);
 });

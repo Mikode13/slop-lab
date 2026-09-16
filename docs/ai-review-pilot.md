@@ -39,18 +39,19 @@ succeeds for the same head commit.
 
 The work is split across jobs that do not share credentials:
 
-| Job       | Credentials                                                    | Responsibility                                          |
-| --------- | -------------------------------------------------------------- | ------------------------------------------------------- |
-| `Analyze` | Provider token from `ai-review`, read-only GitHub token        | Collect evidence, run the reviewer, validate the result |
-| `Publish` | GitHub token with `pull-requests: write` and `statuses: write` | Revalidate, publish the review, report the status       |
+| Job       | Credentials                                                    | Responsibility                                                  |
+| --------- | -------------------------------------------------------------- | --------------------------------------------------------------- |
+| `Analyze` | Provider token from `ai-review`, read-only GitHub token        | Collect evidence, run the reviewer, validate the result         |
+| `Publish` | GitHub token with `pull-requests: write` and `statuses: write` | Revalidate, comment each finding on its line, report the status |
 
 `Analyze` checks out the pull request head without persisted Git credentials and reads it as
 data: nothing from it runs, and the reviewer starts in a separate work directory. The
-reviewer's own scripts, the repository instructions, the architecture document, and the
-decision log are all read from the base revision, so a pull request cannot rewrite the reviewer
-that is about to judge it. The review skill comes from the pinned skills revision and
-applicable standards from the current `Mikode13/engineering` main, whose commit is recorded in
-the review input.
+reviewer's progress output, which the pull request can influence, is printed with workflow
+commands switched off. The reviewer's own scripts, the repository instructions, the
+architecture document, and the decision log are all read from the base revision, so a pull
+request cannot rewrite the reviewer that is about to judge it. The review skill comes from the
+pinned skills revision and applicable standards from the current `Mikode13/engineering` main,
+whose commit is recorded in the review input.
 
 `Publish` re-runs the full contract validation on the result it receives before it acts on it,
 and neutralizes mentions, HTML, and comment markers in every string it renders. Under
@@ -126,12 +127,13 @@ alongside the check. This follows the standard. Note that
 [Mikode13/engineering#27](https://github.com/Mikode13/engineering/issues/27) still describes
 mapping `blocked` to a failing check, which the standard has since superseded.
 
-Pre-existing findings and suggestions keep their real severity, never block, and appear in the
-summary. A provider failure, a timeout, a reply that fails contract validation twice, a result
-bound to another commit, a result too large to hand between jobs, and an analysis job that did
-not succeed all produce `incomplete`. A blocking finding that cannot be anchored to a position
-in the diff also fails the check, because a conversation nobody has to resolve would leave the
-outcome unenforced.
+Pre-existing findings and suggestions keep their real severity and never block. A provider
+failure, a timeout, a reply that fails contract validation twice, a result bound to another
+commit, a result too large to hand between jobs, and an analysis job that did not succeed all
+produce `incomplete`. A blocking finding that cannot be anchored to a position in the diff also
+fails the check, because a conversation nobody has to resolve would leave the outcome
+unenforced. So does a non-blocking comment the job cannot resolve, because an open one would
+hold the merge back like a blocking one.
 
 Each execution decides the status from its own result, never from a review already on the pull
 request. Any workflow allowed to write reviews could have posted one, and an earlier
@@ -140,11 +142,20 @@ an `incomplete` review publishes its own review, and only a repeated delivery of
 report is left unpublished. To retry, use "Re-run all jobs": re-running only the failed jobs
 repeats the publication of the same report without a new review.
 
-The summary names every finding on one line. The reasoning of a finding that opened a
-conversation lives only in that conversation; the reasoning of the others, and how each
-perspective was reviewed, are folded below the list. When a first reply fails contract
-validation, the reasons are logged and written to the job summary even if the repair succeeds,
-because they show which part of the contract a first reply gets wrong.
+A finding appears where a person reviewing by hand would put it: as a comment on its line of the
+diff, with its problem, consequence, direction, and any follow-up that names it. A blocking
+finding's conversation stays open. A non-blocking one is resolved as soon as it is published,
+so it stays on its line without holding the merge back, and anyone can reopen it to discuss it.
+GitHub accepts comments only on lines of the diff, so a non-blocking finding about another line
+is described in the summary instead, and a blocking one about another line of a changed file is
+commented on that file's first changed line and names the line it means.
+
+The summary keeps only the verdict, the blocking findings with their lines, what could not go on
+a line, the reviewer's questions and limitations, follow-up that names no finding, and context
+the reviewer did not receive. How each perspective was reviewed goes to the job summary, with
+the reasons a reply failed contract validation. Those reasons are recorded even when the repair
+succeeds, because they show which part of the contract a first reply gets wrong; when the
+repair fails too, the pull request is told only that the reply did not satisfy the contract.
 
 ## Enforcement
 

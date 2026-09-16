@@ -116,7 +116,13 @@ function extractObject(text) {
  */
 function reportProgress(turn) {
 	const tail = turn.stderr.trimEnd().split('\n').slice(-20).join('\n');
-	if (tail !== '') console.log(`Reviewer progress (last lines):\n${tail}`);
+	if (tail === '') return;
+	// The tail is text the reviewer wrote, so workflow commands are switched off while it is
+	// printed: a line of it that starts with "::" stays a log line.
+	const resume = randomUUID();
+	console.log(`::stop-commands::${resume}`);
+	console.log(`Reviewer progress (last lines):\n${tail}`);
+	console.log(`::${resume}::`);
 }
 
 /** Turns one completed turn into either a validated result or the reasons it was rejected. */
@@ -185,6 +191,9 @@ let result = null;
 let errors = [];
 let attempts = 0;
 let repairReasons = [];
+let failedRepairReasons = [];
+
+const bounded = reasons => reasons.slice(0, 20).map(reason => oneLine(reason).slice(0, 300));
 
 if (!buildReport.fits) {
 	const missing = buildReport.missingEssentials ?? [];
@@ -209,7 +218,7 @@ if (!buildReport.fits) {
 		attempts = 2;
 		// Kept even when the repair succeeds: they show which part of the contract a first reply
 		// gets wrong, which is what tuning the contract needs.
-		repairReasons = attempt.errors.slice(0, 20).map(error => oneLine(error).slice(0, 300));
+		repairReasons = bounded(attempt.errors);
 		console.log('The first reply failed validation; attempting one repair.');
 		for (const reason of repairReasons) console.log(`Rejected before repair: ${reason}`);
 		const repairPath = join(workDirectory, 'repair-prompt.txt');
@@ -218,8 +227,16 @@ if (!buildReport.fits) {
 		if (repaired.result) {
 			attempt = repaired;
 		} else {
+			failedRepairReasons = bounded(repaired.errors);
+			for (const reason of failedRepairReasons) console.log(`Rejected after repair: ${reason}`);
+			// The contract's validation messages help tune the contract, not the author, so the pull
+			// request gets one plain reason; a failure to run the repair at all is still named.
 			attempt = {
-				errors: [...attempt.errors, ...repaired.errors.map(error => `After repair: ${error}`)],
+				errors: [
+					"The reviewer's reply did not satisfy the result contract, and one repair did not " +
+						'produce a valid result.',
+					...(typeof repaired.reply === 'string' ? [] : repaired.errors),
+				],
 			};
 		}
 	}
@@ -242,6 +259,7 @@ const report = {
 	omissions: buildReport.omissions,
 	attempts,
 	repairReasons,
+	failedRepairReasons,
 	usage,
 	result,
 };
@@ -263,6 +281,7 @@ const deliverable =
 				omissions: buildReport.omissions,
 				attempts,
 				repairReasons,
+				failedRepairReasons,
 				usage,
 				result: null,
 			})
