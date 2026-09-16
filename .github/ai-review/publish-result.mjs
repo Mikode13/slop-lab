@@ -477,12 +477,13 @@ if (report.valid) {
 		head: headSha,
 		earlier: earlierFindings,
 	});
-	if (!revalidated.valid) {
-		report = incomplete(
-			report,
-			revalidated.errors.map(error => `On revalidation: ${error}`),
-		);
-	}
+	// The gate follows the outcome revalidation derived, never the report's own outcome field.
+	report = revalidated.valid
+		? { ...report, outcome: revalidated.outcome }
+		: incomplete(
+				report,
+				revalidated.errors.map(error => `On revalidation: ${error}`),
+			);
 }
 
 const state = await readReviewState(github, { repository, pullNumber });
@@ -512,6 +513,15 @@ if (planned.comments.length > 0) {
 		},
 	});
 }
+// A conversation is reopened before the reply that records why, so a run that stops in between
+// leaves it holding the merge rather than looking already escalated to the next review.
+for (const thread of planned.reopen) {
+	await github.graphql(
+		'mutation ($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id } } }',
+		{ id: thread.id },
+	);
+}
+
 // One at a time, so a failure leaves the replies before it posted and a re-run skips them.
 for (const reply of planned.replies) {
 	await github.request(`${pullPath}/comments/${reply.thread.commentId}/replies`, {
@@ -523,13 +533,6 @@ console.log(
 	`Posted ${planned.comments.length} new comment(s) and ${planned.replies.length} ` +
 		`reply(ies) for ${headSha}.`,
 );
-
-for (const thread of planned.reopen) {
-	await github.graphql(
-		'mutation ($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id } } }',
-		{ id: thread.id },
-	);
-}
 
 const body = renderSummary(report, planned);
 

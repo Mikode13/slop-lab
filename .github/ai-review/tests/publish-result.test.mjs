@@ -423,6 +423,8 @@ test('a suggestion someone resolved reopens once when it is found again as a SHO
 	});
 	assert.equal(again.review, null);
 	assert.deepEqual(again.mutations, ['unresolve thread-0']);
+	const order = again.writes.map(write => write.path);
+	assert.ok(order.indexOf('/graphql') < order.findIndex(path => path.endsWith('/replies')));
 	assert.equal(again.replies.length, 1);
 	assert.match(
 		again.replies[0],
@@ -515,6 +517,15 @@ test('an earlier finding the review could not recheck is named and kept', () => 
 		/- Could not recheck: .*Finding F1.*The file is missing\./u,
 	);
 	assert.deepEqual(readMarker('ledger', again.summary.body.body), [entry]);
+});
+
+test('the gate follows the outcome revalidation derives, not the outcome the report claims', () => {
+	const result = resultWith([blocker('F1')]);
+	const { status, outputs, summary } = publish(result, { report: { outcome: 'clean' } });
+
+	assert.equal(status, 1);
+	assert.match(outputs, /outcome=blocked\npublished=true/u);
+	assert.match(summary.body.body, /## AI review: blocked/u);
 });
 
 test('a result that leaves an earlier finding unrechecked is incomplete', () => {
