@@ -189,3 +189,27 @@ therefore measures the review with its status reported but not required.
 trusting the workflow is not the same as trusting every workflow a branch can add. The boundary
 has to include the secret and the name of the check, and the cheapest way to close each part
 can differ.
+
+## Cancel the weather request that a newer one supersedes
+
+**Decision.** The weather flow waits for the typing to settle before it searches, aborts the
+request a newer one supersedes, and renders what failed instead of only logging it. The
+Pokémon browser keeps its current behaviour, because its own cancellation is scheduled for a
+separate pull request.
+
+**Context.** Every keystroke in the city field started a geocoding request, and every change of
+coordinates started a forecast request. Nothing cancelled the request it replaced, so the panel
+displayed whichever response arrived last rather than the one for the city on screen. A failed
+request left the previous values in place, with an explanation only in the browser console,
+where nobody using the application would look for it.
+
+**Consequences.** The weather panel owns an `AbortController` for the request in flight and
+passes its signal to Axios, so a superseded request is cancelled rather than left to land. The
+search runs 300 ms after the last keystroke, which removes most of the requests that typing a
+city name used to produce. Failures reach the panel as a message. The component still owns its
+HTTP calls, its response types are still unvalidated assertions, and the flow still has no
+tests: those remain scheduled as their own changes.
+
+**Lesson.** A request nobody cancels still arrives, and its answer is indistinguishable from
+the answer the user is waiting for. Cancellation is what makes the newest request the one that
+decides the screen.

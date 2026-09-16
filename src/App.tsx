@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import PokemonBrowser from './PokemonBrowser';
 
 // API endpoints
@@ -140,14 +140,22 @@ export default function App() {
 	const [wind, setWind] = useState(0);
 	const [weatherCode, setWeatherCode] = useState(0);
 	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState('');
 
-	// Search for the city as the user types
+	// The weather request that is currently in flight, so a superseded one can be aborted
+	const requestRef = useRef<AbortController | null>(null);
+
+	// Search for the city once the typing settles
 	useEffect(() => {
+		const controller = new AbortController();
+		requestRef.current = controller;
+
 		const search = async () => {
 			setLoading(true);
 			try {
 				const response = await axios.get<GeocodingResponse>(
 					`${GEOCODING_URL}?name=${city}&count=1&language=en&format=json`,
+					{ signal: controller.signal },
 				);
 				const place = response.data.results[0];
 				if (place) {
@@ -155,34 +163,51 @@ export default function App() {
 					setLatitude(place.latitude);
 					setLongitude(place.longitude);
 				}
-			} catch (error) {
-				console.log('Something went wrong', error);
+			} catch (cause) {
+				console.log('Something went wrong', cause);
+				setError(`No place matched "${city}".`);
 			}
 			setLoading(false);
 		};
 
-		void search();
+		const timer = setTimeout(() => {
+			void search();
+		}, 300);
+
+		return () => {
+			clearTimeout(timer);
+			requestRef.current?.abort();
+		};
 	}, [city]);
 
 	// Load the weather once we have the coordinates
 	useEffect(() => {
+		const controller = new AbortController();
+		requestRef.current = controller;
+
 		const load = async () => {
 			setLoading(true);
 			try {
 				const response = await axios.get<ForecastResponse>(
 					`${FORECAST_URL}?latitude=${String(latitude)}&longitude=${String(longitude)}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m`,
+					{ signal: controller.signal },
 				);
 				setTemperature(response.data.current.temperature_2m);
 				setHumidity(response.data.current.relative_humidity_2m);
 				setWind(response.data.current.wind_speed_10m);
 				setWeatherCode(response.data.current.weather_code);
-			} catch (error) {
-				console.log('Something went wrong', error);
+			} catch (cause) {
+				console.log('Something went wrong', cause);
+				setError('The weather for that place could not be loaded.');
 			}
 			setLoading(false);
 		};
 
 		void load();
+
+		return () => {
+			requestRef.current?.abort();
+		};
 	}, [latitude, longitude]);
 
 	return (
@@ -252,6 +277,11 @@ export default function App() {
 					/>
 
 					{loading && <p>Loading...</p>}
+					{error !== '' && (
+						<p role="alert" style={{ color: '#b00020', margin: '8px 0 0' }}>
+							{error}
+						</p>
+					)}
 
 					<div style={{ marginTop: '24px' }}>
 						<h2 style={{ margin: '0 0 8px' }}>{placeName}</h2>
