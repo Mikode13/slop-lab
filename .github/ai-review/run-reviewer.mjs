@@ -37,6 +37,9 @@ const expected = { repository, base: baseSha, head: headSha };
 const usage = [];
 const bytes = text => Buffer.byteLength(text, 'utf8');
 
+/** Keeps a logged message on one line, so text the reviewer wrote cannot start a workflow command. */
+const oneLine = text => String(text).replace(/\s+/gu, ' ').trim();
+
 /**
  * Runs the reviewer once. The prompt travels as a file that `harness-cli` reads itself: the
  * command line bounds none of its size, none of its content becomes an argument, and the
@@ -181,6 +184,7 @@ let outcome = 'incomplete';
 let result = null;
 let errors = [];
 let attempts = 0;
+let repairReasons = [];
 
 if (!buildReport.fits) {
 	const missing = buildReport.missingEssentials ?? [];
@@ -203,7 +207,11 @@ if (!buildReport.fits) {
 
 	if (repairable) {
 		attempts = 2;
+		// Kept even when the repair succeeds: they show which part of the contract a first reply
+		// gets wrong, which is what tuning the contract needs.
+		repairReasons = attempt.errors.slice(0, 20).map(error => oneLine(error).slice(0, 300));
 		console.log('The first reply failed validation; attempting one repair.');
+		for (const reason of repairReasons) console.log(`Rejected before repair: ${reason}`);
 		const repairPath = join(workDirectory, 'repair-prompt.txt');
 		writeFileSync(repairPath, repairPrompt(attempt.reply, attempt.errors));
 		const repaired = interpret(await runTurn(repairPath));
@@ -233,6 +241,7 @@ const report = {
 	errors,
 	omissions: buildReport.omissions,
 	attempts,
+	repairReasons,
 	usage,
 	result,
 };
@@ -253,6 +262,7 @@ const deliverable =
 				errors: ['The review result was too large to hand to the publication job.'],
 				omissions: buildReport.omissions,
 				attempts,
+				repairReasons,
 				usage,
 				result: null,
 			})
@@ -265,4 +275,4 @@ console.log(`Outcome: ${outcome} after ${attempts} attempt(s).`);
 for (const entry of usage) {
 	console.log(`Usage: ${entry.inputTokens} in, ${entry.outputTokens} out, ${entry.duration}s.`);
 }
-for (const error of errors) console.log(`Rejected: ${error}`);
+for (const error of errors) console.log(`Rejected: ${oneLine(error)}`);

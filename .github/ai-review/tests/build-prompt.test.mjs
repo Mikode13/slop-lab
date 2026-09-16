@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+
+import { perspectiveKeys, validateResult } from '../contract.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const builder = join(here, '..', 'build-prompt.mjs');
@@ -149,4 +151,67 @@ test('the runner never calls the provider for a build that does not fit', () => 
 	assert.equal(report.outcome, 'incomplete');
 	assert.equal(report.attempts, 0);
 	assert.match(report.errors[0], /src\/large\.js/u);
+});
+
+test('the reasons a reply needed repair are recorded even when the repair succeeds', () => {
+	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
+	build(directories);
+
+	const repository = 'Mikode13/slop-lab';
+	const clean = {
+		version: 1,
+		scope: { repository, base, head, paths: ['src/small.js'] },
+		outcome: 'clean',
+		perspectives: Object.fromEntries(
+			perspectiveKeys.map(key => [
+				key,
+				{
+					depth: 'baseline',
+					coverage: 'complete',
+					reason: 'Reviewed.',
+					skills: [],
+					finding_ids: [],
+				},
+			]),
+		),
+		findings: [],
+		verification: [],
+		limitations: [],
+		questions: [],
+		context: [],
+		follow_up: [],
+	};
+	assert.deepEqual(validateResult(clean, { repository, base, head }).errors, []);
+
+	// Answers the first turn with an object the contract rejects, and the repair with a valid one.
+	const reviewer = join(directories.work, 'reviewer.mjs');
+	const answered = join(directories.work, 'answered');
+	write(
+		reviewer,
+		[
+			'#!/usr/bin/env node',
+			"import { existsSync, writeFileSync } from 'node:fs';",
+			`const first = !existsSync(${JSON.stringify(answered)});`,
+			`writeFileSync(${JSON.stringify(answered)}, '');`,
+			`const response = first ? '{"version": 1}' : ${JSON.stringify(JSON.stringify(clean))};`,
+			'process.stdout.write(JSON.stringify({ response, inputTokens: 1, outputTokens: 1, duration: 1 }));',
+			'',
+		].join('\n'),
+	);
+	chmodSync(reviewer, 0o755);
+
+	const run = spawnSync(process.execPath, [runner], {
+		encoding: 'utf8',
+		env: environment(directories, {
+			GITHUB_OUTPUT: join(directories.work, 'github-output'),
+			REVIEWER_COMMAND: reviewer,
+		}),
+	});
+	assert.equal(run.status, 0, run.stderr);
+
+	const report = JSON.parse(readFileSync(join(directories.work, 'review-report.json'), 'utf8'));
+	assert.equal(report.outcome, 'clean');
+	assert.equal(report.attempts, 2);
+	assert.ok(report.repairReasons.length > 0);
+	assert.match(run.stdout, /Rejected before repair: /u);
 });

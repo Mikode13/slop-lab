@@ -78,10 +78,11 @@ const blockedResult = findings => ({
 });
 
 /**
- * Runs the publisher on a valid blocked result, with `reviews` already on the pull request, and
- * returns its exit status and posted review.
+ * Runs the publisher on a valid blocked result, with `reviews` already on the pull request and
+ * `report` fields added to the analysis report, and returns its exit status, posted review, and
+ * job summary.
  */
-function publish(findings, { reviews = [] } = {}) {
+function publish(findings, { reviews = [], report = {} } = {}) {
 	const result = blockedResult(findings);
 	assert.deepEqual(validateResult(result, { repository, base, head }).errors, []);
 
@@ -100,7 +101,7 @@ function publish(findings, { reviews = [] } = {}) {
 			GITHUB_TOKEN: 'test-token',
 			HEAD_SHA: head,
 			PR_NUMBER: '7',
-			REPORT: JSON.stringify({ valid: true, outcome: 'blocked', errors: [], result }),
+			REPORT: JSON.stringify({ valid: true, outcome: 'blocked', errors: [], result, ...report }),
 			REPOSITORY: repository,
 			STUB_DIFF: join(directory, 'change.diff'),
 			STUB_POSTED: posted,
@@ -109,7 +110,9 @@ function publish(findings, { reviews = [] } = {}) {
 	});
 
 	const review = existsSync(posted) ? JSON.parse(readFileSync(posted, 'utf8')) : null;
-	return { status: run.status, stdout: run.stdout, review };
+	const summaryPath = join(directory, 'summary.md');
+	const summary = existsSync(summaryPath) ? readFileSync(summaryPath, 'utf8') : '';
+	return { status: run.status, stdout: run.stdout, review, summary };
 }
 
 test('a blocked review whose blocking findings all reach a conversation passes the check', () => {
@@ -163,4 +166,39 @@ test('a copy of the report posted by anyone else does not stop the publication',
 
 	assert.equal(status, 0);
 	assert.equal(review.comments.length, 1);
+});
+
+test('the summary names a finding with a conversation without repeating its reasoning', () => {
+	const { review } = publish([blockingFinding('F1', 'src/changed.js', 2)]);
+
+	assert.match(
+		review.body,
+		/Blocking finding F1\*\* — introduced, blocking, at `src\/changed\.js:2`, see its conversation/u,
+	);
+	assert.doesNotMatch(review.body, /The change introduces a defect\./u);
+	assert.match(review.comments[0].body, /The change introduces a defect\./u);
+});
+
+test('a finding without a conversation keeps its reasoning in the summary', () => {
+	const suggestion = {
+		...blockingFinding('F2', 'src/changed.js', 3),
+		severity: 'SUGGESTION',
+		blocking: false,
+		problem: 'A smaller issue remains.',
+	};
+	const { review } = publish([blockingFinding('F1', 'src/changed.js', 2), suggestion]);
+
+	assert.equal(review.comments.length, 1);
+	assert.match(review.body, /<details><summary>Findings without a conversation<\/summary>/u);
+	assert.match(review.body, /A smaller issue remains\./u);
+});
+
+test('the reasons a first reply was rejected reach the job summary, not the pull request', () => {
+	const { review, summary } = publish([blockingFinding('F1', 'src/changed.js', 2)], {
+		report: { attempts: 2, repairReasons: ['findings[0].severity is not a known severity.'] },
+	});
+
+	assert.match(summary, /Reasons the first reply was rejected/u);
+	assert.match(summary, /findings\[0\]\.severity is not a known severity\./u);
+	assert.doesNotMatch(review.body, /Reasons the first reply was rejected/u);
 });

@@ -91,42 +91,74 @@ const describeUsage = usage =>
 		.map(entry => `${entry.inputTokens ?? '?'} in / ${entry.outputTokens ?? '?'} out`)
 		.join('; ') || 'not reported';
 
-function renderSummary(report) {
+/** Folds content a reader rarely needs below a one-line label. */
+const folded = (label, items) => [
+	'',
+	`<details><summary>${label}</summary>`,
+	'',
+	...items,
+	'',
+	'</details>',
+];
+
+/**
+ * Names every finding on one line. The reasoning of a finding that opened a conversation lives
+ * only in that conversation, so the summary never repeats it; the reasoning of the others is
+ * folded below the list.
+ */
+function renderSummary(report, conversations) {
 	const lines = [marker, `## AI review: ${report.outcome}`, '', `Reviewed commit: ${headSha}`, ''];
 
 	if (report.valid) {
-		lines.push('### Perspectives', '');
-		for (const key of perspectiveKeys) {
-			const perspective = report.result.perspectives[key];
+		const { findings, perspectives } = report.result;
+		const followUp = report.result.follow_up;
+
+		lines.push('### Findings', '');
+		if (findings.length === 0) lines.push('No verified findings.');
+		for (const finding of findings) {
+			const where = finding.location.line
+				? `${finding.location.path}:${finding.location.line}`
+				: finding.location.path;
+			const conversation = conversations.has(finding.id) ? ', see its conversation' : '';
 			lines.push(
-				`- **${key}** — ${perspective.coverage} (${perspective.depth}): ` +
-					sanitize(perspective.reason),
+				`- **[${finding.severity}] ${sanitize(finding.title)}** — ${finding.origin}, ` +
+					`${finding.blocking ? 'blocking' : 'non-blocking'}, at \`${sanitize(where)}\`` +
+					conversation,
 			);
 		}
 
-		lines.push('', '### Findings', '');
-		if (report.result.findings.length === 0) {
-			lines.push('No verified findings.');
-		} else {
-			for (const finding of report.result.findings) {
-				const where = finding.location.line
-					? `${finding.location.path}:${finding.location.line}`
-					: finding.location.path;
-				lines.push(
-					`- **[${finding.severity}] ${sanitize(finding.title)}** — ${finding.origin}, ` +
-						`${finding.blocking ? 'blocking' : 'non-blocking'}, at \`${sanitize(where)}\`. ` +
-						`${sanitize(finding.problem)} Consequence: ${sanitize(finding.consequence)} ` +
-						`Direction: ${sanitize(finding.recommended_direction)}`,
-				);
-			}
+		const withoutConversation = findings.filter(finding => !conversations.has(finding.id));
+		if (withoutConversation.length > 0) {
+			lines.push(
+				...folded(
+					'Findings without a conversation',
+					withoutConversation.map(
+						finding =>
+							`- **${sanitize(finding.title)}** — ${sanitize(finding.problem)} ` +
+							`Consequence: ${sanitize(finding.consequence)} ` +
+							`Direction: ${sanitize(finding.recommended_direction)}`,
+					),
+				),
+			);
 		}
 
-		if (report.result.follow_up.length > 0) {
+		lines.push('', '### Perspectives', '');
+		for (const key of perspectiveKeys) {
+			lines.push(`- **${key}** — ${perspectives[key].coverage} (${perspectives[key].depth})`);
+		}
+		lines.push(
+			...folded(
+				'How each perspective was reviewed',
+				perspectiveKeys.map(key => `- **${key}**: ${sanitize(perspectives[key].reason)}`),
+			),
+		);
+
+		if (followUp.length > 0) {
 			lines.push(
-				'',
-				'### Follow-up',
-				'',
-				...report.result.follow_up.map(item => `- ${sanitize(item)}`),
+				...folded(
+					`Follow-up (${followUp.length})`,
+					followUp.map(item => `- ${sanitize(item)}`),
+				),
 			);
 		}
 	} else {
@@ -208,6 +240,7 @@ if (report.valid) {
 
 const blocking = report.valid ? report.result.findings.filter(finding => finding.blocking) : [];
 const comments = [];
+const conversations = new Set();
 const unanchored = [];
 
 if (blocking.length > 0) {
@@ -222,6 +255,7 @@ if (blocking.length > 0) {
 			unanchored.push(finding);
 			continue;
 		}
+		conversations.add(finding.id);
 		comments.push({
 			path: finding.location.path,
 			line,
@@ -231,7 +265,7 @@ if (blocking.length > 0) {
 	}
 }
 
-let body = renderSummary(report);
+let body = renderSummary(report, conversations);
 if (unanchored.length > 0) {
 	body += `\n\n### Blocking findings without a diff position\n\n${unanchored
 		.map(finding => `- ${sanitize(finding.title)} in \`${sanitize(finding.location.path)}\``)
@@ -257,7 +291,16 @@ if (alreadyPublished) {
 	console.log(`Published the review for ${headSha} with ${comments.length} conversation(s).`);
 }
 
-appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`);
+// Why a first reply failed validation matters for tuning the contract, not for the pull request,
+// so only the job summary carries it.
+const repairReasons = Array.isArray(report.repairReasons) ? report.repairReasons : [];
+const repairNotes =
+	repairReasons.length > 0
+		? `\n\n### Reasons the first reply was rejected\n\n${repairReasons
+				.map(reason => `- ${sanitize(reason)}`)
+				.join('\n')}`
+		: '';
+appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}${repairNotes}\n`);
 
 // Every blocking finding needs a conversation that someone has to resolve. One that reached
 // none would leave part of the merge authority unenforced, so the check fails even when other

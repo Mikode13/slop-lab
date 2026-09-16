@@ -95,8 +95,10 @@ The prompt reaches `harness-cli` as a file through `--prompt-file`, so the model
 rather than the command line. The 1,250,000-byte budget is about 500,000 tokens at the roughly
 2.5 characters per token that Anthropic documents for the current tokenizer. That is half of
 Opus 5's 1M-token window: it leaves room for the agent's own prompt and the reply, and it
-stays below the length at which a long context starts to degrade the review. Every run records
-its input tokens in the review report, so the first real runs can confirm the ratio.
+stays below the length at which a long context starts to degrade the review. The report records
+the tokens `harness-cli` returns, but that figure cannot confirm the ratio yet: `harness` counts
+only uncached input, so the first real review reported 2 input tokens for a 143,506-byte
+prompt.
 
 Measured against the pinned skill and the current standards:
 
@@ -137,6 +139,12 @@ request. Any workflow allowed to write reviews could have posted one, and an ear
 an `incomplete` review publishes its own review, and only a repeated delivery of the same
 report is left unpublished. To retry, use "Re-run all jobs": re-running only the failed jobs
 repeats the publication of the same report without a new review.
+
+The summary names every finding on one line. The reasoning of a finding that opened a
+conversation lives only in that conversation; the reasoning of the others, and how each
+perspective was reviewed, are folded below the list. When a first reply fails contract
+validation, the reasons are logged and written to the job summary even if the repair succeeds,
+because they show which part of the contract a first reply gets wrong.
 
 ## Enforcement
 
