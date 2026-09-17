@@ -25,6 +25,10 @@
 		"lint:fix": "eslint . --fix",
 		"typecheck": "tsc --noEmit",
 		"check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:ai-review",
+		"test": "pnpm run test:unit",
+		"test:unit": "vitest run --project unit",
+		"test:unit:watch": "vitest --project unit",
+		"test:coverage": "vitest run --project unit --coverage",
 		"test:ai-review": "node --test \".github/ai-review/tests/*.test.mjs\""
 	},
 	"dependencies": {
@@ -40,9 +44,11 @@
 		"@types/react": "^19.2.18",
 		"@types/react-dom": "^19.2.7",
 		"@vitejs/plugin-react": "^6.1.1",
+		"@vitest/coverage-v8": "^4.1.11",
 		"eslint": "^10.10.0",
 		"prettier": "^3.9.6",
 		"typescript": "^6.0.3",
-		"vite": "^8.2.2"
+		"vite": "^8.2.2",
+		"vitest": "^4.1.11"
 	}
 }
