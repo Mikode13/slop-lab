@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { deriveOutcome, perspectiveKeys, validateResult } from '../contract.mjs';
+import { deriveOutcome, perspectiveKeys, shapeExamples, validateResult } from '../contract.mjs';
 
 const repository = 'Mikode13/slop-lab';
 const base = 'a'.repeat(40);
@@ -217,4 +217,33 @@ test('a field mismatch names the fields, so a repair knows what to change', () =
 			'Finding 1 is missing `evidence` and has unexpected `notes`.',
 		),
 	);
+});
+
+test('a result that has too few fields hears about every one it lacks', () => {
+	const errors = errorsOf(resultWith([{ id: 'F1' }])).join(' ');
+	assert.match(
+		errors,
+		/Finding 1 is missing `severity`, `origin`, `relevance`, `blocking`, `title`, `problem`, `consequence`, `recommended_direction`, `location`, `evidence`\./u,
+	);
+});
+
+test('the shape examples shown to the reviewer form a valid result', () => {
+	const { perspective, finding, verification, recheck, limitation, question } = shapeExamples;
+	const limited = limitation.perspectives[0];
+	const result = resultWith([finding], {
+		perspectives: Object.fromEntries(
+			perspectiveKeys.map(key => [
+				key,
+				key === limited ? { ...perspective, coverage: 'incomplete' } : perspective,
+			]),
+		),
+		verification: [verification],
+		rechecks: [recheck],
+		limitations: [limitation],
+		questions: [question],
+		context: finding.evidence,
+		follow_up: ['F1: A follow-up item.'],
+	});
+
+	assert.deepEqual(errorsOf(result, [{ key: recheck.key, severity: 'SHOULD FIX' }]), []);
 });

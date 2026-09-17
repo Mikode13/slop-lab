@@ -290,7 +290,9 @@ const deliverable =
 const delimiter = `report-${randomUUID()}`;
 appendFileSync(process.env.GITHUB_OUTPUT, `report<<${delimiter}\n${deliverable}\n${delimiter}\n`);
 
-console.log(`Outcome: ${outcome} after ${attempts} attempt(s).`);
+console.log(
+	`Outcome: ${outcome} after ${attempts === 1 ? '1 attempt' : `${String(attempts)} attempts`}.`,
+);
 for (const entry of usage) {
 	console.log(`Usage: ${entry.inputTokens} in, ${entry.outputTokens} out, ${entry.duration}s.`);
 }

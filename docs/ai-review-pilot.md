@@ -86,6 +86,12 @@ of `mikode-context`, which the review skill accepts. The skills' validation case
 specialists' calibration examples are left out, because the skills reserve them for
 validating the skills rather than for ordinary reviews.
 
+The prompt also shows one example of every object in the result, generated from the pilot's
+validator and tested against it. Given only the contract's prose, first replies kept adding or
+dropping fields, such as `checked_sources` on every recheck. It also tells the reviewer to keep
+finding IDs out of anything a person reads, except as the `F1:` prefix that moves a follow-up
+item into that finding's comment.
+
 Dropping the trusted `AGENTS.md` or the reviewed files leaves nothing worth reviewing, and so
 does supplying a reviewed file only in part, so a reviewed file over 40,000 bytes counts as
 missing too. Either way the run is abandoned as `incomplete` before the provider is called
@@ -149,9 +155,10 @@ a new review.
 
 The reasons a reply failed contract validation go to the job log and the review report, even
 when the repair succeeds, because they show which part of the contract a first reply gets
-wrong. When the repair fails too, the pull request is told only that the reply did not satisfy
-the contract. A review of pull request 6 took 584 seconds of a 600-second turn, so each turn
-now has fifteen minutes.
+wrong. Each reason names the fields that are missing or not in the contract, so the repair
+knows what to change. When the repair fails too, the pull request is told only that the reply
+did not satisfy the contract. A review of pull request 6 took 584 seconds of a 600-second turn,
+so each turn now has fifteen minutes.
 
 ## Findings on the pull request
 

@@ -105,22 +105,29 @@ function positionOf(location, lines) {
 const where = location =>
 	location.line === null ? location.path : `${location.path}:${location.line}`;
 
-/** Follow-up items that start with the ids of findings, such as "F1: ..." or "F2, F3: ...". */
+/**
+ * Follow-up items that start with the ids of findings, such as "F1: ...", "F2, F3: ...", or
+ * "F2 and F3: ...", attached to those findings, and the rest.
+ */
 function splitFollowUp(items, findings) {
 	const ids = new Set(findings.map(finding => finding.id));
 	const byFinding = new Map();
+	const attached = [];
 	const general = [];
 
 	for (const item of items) {
 		const prefixed = /^([^:]{1,80}):\s*(.+)$/su.exec(item);
-		const named = prefixed ? prefixed[1].split(/[\s,]+/u).filter(Boolean) : [];
+		const named = prefixed
+			? prefixed[1].split(/[\s,]+/u).filter(word => word !== '' && word !== 'and')
+			: [];
 		if (named.length > 0 && named.every(id => ids.has(id))) {
+			attached.push({ ids: named, text: prefixed[2] });
 			for (const id of named) byFinding.set(id, [...(byFinding.get(id) ?? []), prefixed[2]]);
 		} else {
 			general.push(item);
 		}
 	}
-	return { byFinding, general };
+	return { byFinding, attached, general };
 }
 
 const origins = { pre_existing: 'pre-existing', unknown: 'unknown origin' };
@@ -190,7 +197,7 @@ const emptyPlan = ledger => ({
 	undetermined: [],
 	reopen: [],
 	ledger,
-	followUp: { byFinding: new Map(), general: [] },
+	followUp: { byFinding: new Map(), attached: [], general: [], uncarried: [] },
 });
 
 /**
@@ -210,8 +217,12 @@ function plan(result, earlierFindings, state, lines) {
 	const findings = new Map(result.findings.map(finding => [finding.id, finding]));
 	const planned = {
 		...emptyPlan([]),
-		followUp: splitFollowUp(result.follow_up, result.findings),
+		followUp: { ...splitFollowUp(result.follow_up, result.findings), uncarried: [] },
 	};
+
+	// The findings whose follow-up items appear with them: in the comment this result opens, now or
+	// on an earlier delivery of the same report, or in a summary entry that gives the reasoning.
+	const carried = new Set();
 
 	const presentKeys = new Map();
 	for (const recheck of result.rechecks.filter(item => item.status === 'present')) {
@@ -240,6 +251,14 @@ function plan(result, earlierFindings, state, lines) {
 			conversation = 'new';
 		}
 		if (conversation === null) planned.ledger.push(earlierEntry(finding, key));
+		const ownComment = thread !== undefined && key === `${fingerprint}-${finding.id}`;
+		if (
+			conversation === 'new' ||
+			ownComment ||
+			(conversation === null && (finding.blocking || finding.relevance === 'change'))
+		) {
+			carried.add(finding.id);
+		}
 
 		if (finding.blocking) {
 			planned.blocking.push({ finding, conversation, items });
@@ -247,6 +266,15 @@ function plan(result, earlierFindings, state, lines) {
 			planned.withoutLine.push({ finding, items });
 		} else if (conversation === null) {
 			planned.incidental.push(finding);
+		}
+	}
+
+	// A finding that already has a conversation, or that the summary names in one line, shows no
+	// follow-up, so an item attached to it stays in the summary instead of reaching no reader.
+	for (const { ids, text } of planned.followUp.attached) {
+		const uncarried = ids.filter(id => !carried.has(id));
+		if (uncarried.length > 0) {
+			planned.followUp.uncarried.push({ about: uncarried.map(id => findings.get(id)), text });
 		}
 	}
 
@@ -304,6 +332,10 @@ function plan(result, earlierFindings, state, lines) {
 	return planned;
 }
 
+/** "1 new comment", "2 new comments": `plural` defaults to the singular with an "s". */
+const count = (number, singular, plural = `${singular}s`) =>
+	`${String(number)} ${number === 1 ? singular : plural}`;
+
 const section = (title, items) => (items.length > 0 ? ['', `### ${title}`, '', ...items] : []);
 
 function formatDuration(usage) {
@@ -329,7 +361,7 @@ function verdict(report, planned) {
 					'that the change is safe. What it did find is published.',
 			];
 		case 'blocked':
-			return [`Not ready to merge: ${planned.blocking.length} blocking finding(s).`];
+			return [`Not ready to merge: ${count(planned.blocking.length, 'blocking finding')}.`];
 		case 'concerns':
 			return [
 				'No blocking findings. Each `SHOULD FIX` conversation holds the merge until it is ' +
@@ -400,17 +432,19 @@ function renderSummary(report, planned) {
 				limitation => `- ${sanitize(limitation.reason)} Needed: ${sanitize(limitation.needed)}`,
 			),
 		),
-		...section(
-			'Follow-up',
-			planned.followUp.general.map(item => `- ${sanitize(item)}`),
-		),
+		...section('Follow-up', [
+			...planned.followUp.uncarried.map(
+				({ about, text }) => `- For ${about.map(compact).join(' and ')}: ${sanitize(text)}`,
+			),
+			...planned.followUp.general.map(item => `- ${sanitize(item)}`),
+		]),
 		...section(
 			'Context not supplied to the reviewer',
 			(report.omissions ?? []).map(omission => `- ${sanitize(omission)}`),
 		),
 		'',
 		'---',
-		[`Commit ${commit}`, `${report.attempts ?? 0} provider turn(s)`, formatDuration(report.usage)]
+		[`Commit ${commit}`, count(report.attempts ?? 0, 'provider turn'), formatDuration(report.usage)]
 			.filter(Boolean)
 			.join(' · '),
 		marker('ledger', planned.ledger),
@@ -518,7 +552,7 @@ if (planned.comments.length > 0) {
 		body: {
 			commit_id: headSha,
 			event: 'COMMENT',
-			body: `AI review of ${commit}: ${planned.comments.length} new comment(s). The summary comment has the rest.`,
+			body: `AI review of ${commit}: ${count(planned.comments.length, 'new comment')}. The summary comment has the rest.`,
 			comments: planned.comments,
 		},
 	});
@@ -540,8 +574,8 @@ for (const reply of planned.replies) {
 	});
 }
 console.log(
-	`Posted ${planned.comments.length} new comment(s) and ${planned.replies.length} ` +
-		`reply(ies) for ${headSha}.`,
+	`Posted ${count(planned.comments.length, 'new comment')} and ` +
+		`${count(planned.replies.length, 'reply', 'replies')} for ${headSha}.`,
 );
 
 const body = renderSummary(report, planned);

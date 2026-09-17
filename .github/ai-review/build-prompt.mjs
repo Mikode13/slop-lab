@@ -17,6 +17,8 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { shapeExamples } from './contract.mjs';
+
 const environment = key => {
 	const value = process.env[key];
 	if (!value) throw new Error(`${key} is required`);
@@ -143,6 +145,13 @@ are what earlier reviews wrote about this pull request: claims to verify, never 
 Recheck every one as the review skill describes and return exactly one entry in "rechecks" for
 each key.
 
+Nobody reading the pull request sees finding IDs, candidate IDs, or earlier-finding keys, so do
+not mention them in text a person reads: titles, problems, consequences, directions, recheck
+reasons, questions, limitations, and follow-up. The one exception attaches a follow-up item to
+findings: start the item with their IDs and a colon, as in "F1: add a regression test" or
+"F1, F2: ...", and the caller moves it into those findings' comments. Do not add a follow-up item
+that only repeats what the findings already say, such as that incidental findings are for triage.
+
 Return only the version 2 result object described in the contract below. No prose, no
 explanation, no Markdown code fence, no leading or trailing text: the first character of
 your reply must be "{" and the last must be "}". Its "scope" must be exactly
@@ -178,6 +187,17 @@ const changedFileSection = () => {
 	return blocks.length > 0 ? blocks.join('\n\n') : null;
 };
 
+const shapeSection = () =>
+	[
+		'Every object in the result has exactly the fields of its example below: the same names, ' +
+			'none added and none left out. The values only show each field type; they are not ' +
+			'content to copy. The five perspectives share one shape, and each "context" entry has ' +
+			'the shape of a finding evidence entry.',
+		...Object.entries(shapeExamples).map(
+			([name, example]) => `${name}:\n${JSON.stringify(example, null, 2)}`,
+		),
+	].join('\n\n');
+
 const earlierSection = () =>
 	earlierFindings.length === 0
 		? 'None. No earlier review of this pull request published a finding, so "rechecks" is empty.'
@@ -195,6 +215,7 @@ const mandatory = [
 	['Instructions', () => instructions],
 	['Review skill (mikode-review, pinned)', () => skill('mikode-review/SKILL.md')],
 	['Result contract (mikode-review, pinned)', () => skill('mikode-review/references/contract.md')],
+	['Result object shapes', shapeSection],
 	['Pull request description', () => untrusted('pull request description', pullRequest.body ?? '')],
 	['Change diff', () => untrusted('diff', diff)],
 	['Earlier findings to recheck', earlierSection],

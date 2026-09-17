@@ -123,6 +123,16 @@ test('the code review is supplied with the philosophy it reviews against', () =>
 	);
 });
 
+test('the reviewer sees one example of every result object and is told to keep IDs out of prose', () => {
+	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
+	build(directories);
+	const prompt = readFileSync(join(directories.work, 'prompt.txt'), 'utf8');
+
+	assert.match(prompt, /===== Result object shapes =====\nEvery object in the result has exactly/u);
+	assert.match(prompt, /recheck:\n\{\n {2}"key": "the key of the earlier finding",/u);
+	assert.match(prompt, /do\nnot mention them in text a person reads/u);
+});
+
 test('a budget spent by the mandatory sections never produces a build that fits', () => {
 	const directories = workspace({ 'src/small.js': 'export const small = 1;\n' });
 	const mandatoryOnly = build(directories, { PROMPT_LIMIT: '1' }).bytes;

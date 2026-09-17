@@ -41,6 +41,63 @@ const coverages = ['complete', 'incomplete', 'not_applicable'];
 const dispositions = ['confirmed', 'duplicate', 'rejected', 'unresolved'];
 const evidenceKinds = ['inspected', 'reported', 'executed'];
 
+/**
+ * One example of every object the result contains, with exactly the fields this module accepts.
+ * The reviewer is shown them because it repeatedly added or dropped fields when it had only the
+ * contract's prose; a test keeps them valid against the checks below.
+ */
+export const shapeExamples = {
+	perspective: {
+		depth: 'baseline',
+		coverage: 'complete',
+		reason: 'What was reviewed for this perspective and how deeply.',
+		skills: ['mikode-code-philosophy-review'],
+		finding_ids: ['F1'],
+	},
+	finding: {
+		id: 'F1',
+		severity: 'SHOULD FIX',
+		origin: 'introduced',
+		relevance: 'change',
+		blocking: false,
+		title: 'What is wrong, as one sentence',
+		problem: 'What the code does.',
+		consequence: 'What that causes, and for whom.',
+		recommended_direction: 'What to change, without writing the patch.',
+		location: { path: 'src/example.ts', revision: null, line: 12, symbol: 'example' },
+		evidence: [
+			{
+				source: { ref: 'src/example.ts', revision: null },
+				kind: 'inspected',
+				observation: 'What the source shows.',
+			},
+		],
+	},
+	verification: {
+		candidate_id: 'C1',
+		disposition: 'confirmed',
+		finding_id: 'F1',
+		reason: 'Why the candidate holds.',
+		checked_sources: [{ ref: 'src/example.ts', revision: null }],
+	},
+	recheck: {
+		key: 'the key of the earlier finding',
+		status: 'present',
+		finding_id: 'F1',
+		reason: 'What still causes the defect.',
+	},
+	limitation: {
+		reason: 'What could not be reviewed.',
+		needed: 'What would let the review finish.',
+		perspectives: ['security_reliability'],
+	},
+	question: {
+		question: 'What the author should answer.',
+		perspective: 'intent_scope',
+		prevents_completion: false,
+	},
+};
+
 const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isNonEmptyString = value => typeof value === 'string' && value.trim() !== '';
 const isNullableString = value => value === null || isNonEmptyString(value);
@@ -49,15 +106,16 @@ const isNullableString = value => value === null || isNonEmptyString(value);
 const fieldName = key =>
 	/^[A-Za-z_][\w-]{0,39}$/u.test(key) ? `\`${key}\`` : 'an unreadable name';
 
-const fieldList = keys =>
+// The names the reviewer adds are unbounded, so only the first few are listed.
+const unexpectedList = keys =>
 	keys.length > 5
 		? `${keys.slice(0, 5).map(fieldName).join(', ')} and ${String(keys.length - 5)} more`
 		: keys.map(fieldName).join(', ');
 
 /**
- * Checks that `value` is an object with exactly `keys`. A mismatch names the fields that are
- * missing and the ones that are not in the contract, because a repair can only correct a shape
- * it is told about, and a rejected reply is not kept anywhere else.
+ * Checks that `value` is an object with exactly `keys`. A mismatch names every missing field,
+ * which the contract bounds, and the fields that are not in the contract, because a repair can
+ * only correct a shape it is told about, and a rejected reply is not kept anywhere else.
  */
 function checkFields(collect, value, keys, subject) {
 	if (!isObject(value)) return collect.check(false, `${subject} is not an object.`);
@@ -66,8 +124,8 @@ function checkFields(collect, value, keys, subject) {
 	const missing = keys.filter(key => !present.includes(key));
 	const unexpected = present.filter(key => !keys.includes(key));
 	const problems = [
-		...(missing.length > 0 ? [`is missing ${fieldList(missing)}`] : []),
-		...(unexpected.length > 0 ? [`has unexpected ${fieldList(unexpected)}`] : []),
+		...(missing.length > 0 ? [`is missing ${missing.map(fieldName).join(', ')}`] : []),
+		...(unexpected.length > 0 ? [`has unexpected ${unexpectedList(unexpected)}`] : []),
 	];
 	return collect.check(problems.length === 0, `${subject} ${problems.join(' and ')}.`);
 }
