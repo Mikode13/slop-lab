@@ -146,9 +146,9 @@ export default function App() {
 		const search = async () => {
 			setLoading(true);
 			try {
-				const response = await axios.get<GeocodingResponse>(
-					`${GEOCODING_URL}?name=${city}&count=1&language=en&format=json`,
-				);
+				const response = await axios.get<GeocodingResponse>(GEOCODING_URL, {
+					params: { name: city, count: 1, language: 'en', format: 'json' },
+				});
 				const place = response.data.results[0];
 				if (place) {
 					setPlaceName(place.name + ', ' + place.country);

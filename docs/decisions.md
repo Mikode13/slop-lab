@@ -220,3 +220,21 @@ owners. Promotion must carry these rules, not the ones the first pilot entry des
 **Lesson.** A review gate earns trust when it reads like a colleague's review: severity by
 harm, comments where the code is, and a memory of what it already said. Asking whether a
 named problem still exists is more reliable than hoping the model finds it again.
+
+## Keep Pokémon favorites in the browser
+
+**Decision.** The Pokémon browser lets people save entries and stores their numeric IDs in
+browser-local storage. The favorites filter applies to the currently loaded page, while the
+saved count remains available when navigating between pages.
+
+**Context.** Favorites are a personal convenience in a browser-only teaching application.
+There is no account, server, or cross-device product requirement that would justify adding a
+backend or identifying a user.
+
+**Consequences.** Favorites survive refreshes in the same browser and can be removed from any
+page where the corresponding Pokémon appears. Clearing site data removes them, and another
+browser or device has an independent list. The application stores IDs rather than provider
+response objects so saved data stays small and does not become a cache of stale API fields.
+
+**Lesson.** A local-only requirement can stay local when the persistence limitation is part
+of the product behavior rather than an accidental substitute for synchronization.

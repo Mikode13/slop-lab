@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useEffect, useState } from 'react';
+import { loadFavoriteIds, saveFavoriteIds, toggleFavorite } from './favorites';
 
 // API endpoint
 const POKEAPI_URL = 'https://pokeapi.co/api/v2/pokemon';
@@ -60,6 +61,8 @@ export default function PokemonBrowser() {
 	const [total, setTotal] = useState(0);
 	const [loading, setLoading] = useState(false);
 	const [filter, setFilter] = useState('');
+	const [favoriteIds, setFavoriteIds] = useState(loadFavoriteIds);
+	const [favoritesOnly, setFavoritesOnly] = useState(false);
 
 	// Load the current page and then every detail
 	useEffect(() => {
@@ -85,7 +88,17 @@ export default function PokemonBrowser() {
 		void load();
 	}, [offset]);
 
-	const visible = pokemon.filter(p => p.name.includes(filter.toLowerCase()));
+	const visible = pokemon
+		.filter(p => p.name.includes(filter.toLowerCase()))
+		.filter(p => !favoritesOnly || favoriteIds.includes(p.id));
+
+	const handleFavorite = (id: number) => {
+		setFavoriteIds(current => {
+			const next = toggleFavorite(current, id);
+			saveFavoriteIds(next);
+			return next;
+		});
+	};
 
 	return (
 		<div
@@ -107,6 +120,26 @@ export default function PokemonBrowser() {
 				}}
 				style={{ padding: '8px', borderRadius: '6px', border: '1px solid #ccc', width: '260px' }}
 			/>
+			<div
+				style={{
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'space-between',
+					marginTop: '12px',
+				}}
+			>
+				<label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+					<input
+						type="checkbox"
+						checked={favoritesOnly}
+						onChange={event => {
+							setFavoritesOnly(event.target.checked);
+						}}
+					/>
+					Show favorites only
+				</label>
+				<span style={{ color: '#666', fontSize: '14px' }}>{favoriteIds.length} saved</span>
+			</div>
 
 			<div
 				style={{
@@ -183,6 +216,27 @@ export default function PokemonBrowser() {
 						<p style={{ color: '#666', fontSize: '12px', margin: '8px 0 0' }}>
 							{p.height / 10} m · {p.weight / 10} kg
 						</p>
+						<button
+							type="button"
+							aria-label={
+								favoriteIds.includes(p.id)
+									? `Remove ${p.name} from favorites`
+									: `Add ${p.name} to favorites`
+							}
+							aria-pressed={favoriteIds.includes(p.id)}
+							onClick={() => {
+								handleFavorite(p.id);
+							}}
+							style={{
+								marginTop: '12px',
+								padding: '6px 10px',
+								borderRadius: '6px',
+								border: '1px solid #ccc',
+								background: favoriteIds.includes(p.id) ? '#fff4bf' : '#fff',
+							}}
+						>
+							{favoriteIds.includes(p.id) ? '★ Saved' : '☆ Save'}
+						</button>
 					</div>
 				))}
 			</div>
