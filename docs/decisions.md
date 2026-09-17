@@ -189,3 +189,7 @@ therefore measures the review with its status reported but not required.
 trusting the workflow is not the same as trusting every workflow a branch can add. The boundary
 has to include the secret and the name of the check, and the cheapest way to close each part
 can differ.
+
+## Test entry that conflicts with main
+
+This pull request only tests how the review stops on a conflict.
