@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import PokemonBrowser from './PokemonBrowser';
 
 // API endpoints
@@ -142,13 +142,9 @@ export default function App() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 
-	// The weather request that is currently in flight, so a superseded one can be aborted
-	const requestRef = useRef<AbortController | null>(null);
-
 	// Search for the city once the typing settles
 	useEffect(() => {
 		const controller = new AbortController();
-		requestRef.current = controller;
 
 		const search = async () => {
 			setLoading(true);
@@ -176,14 +172,13 @@ export default function App() {
 
 		return () => {
 			clearTimeout(timer);
-			requestRef.current?.abort();
+			controller.abort();
 		};
 	}, [city]);
 
 	// Load the weather once we have the coordinates
 	useEffect(() => {
 		const controller = new AbortController();
-		requestRef.current = controller;
 
 		const load = async () => {
 			setLoading(true);
@@ -206,7 +201,7 @@ export default function App() {
 		void load();
 
 		return () => {
-			requestRef.current?.abort();
+			controller.abort();
 		};
 	}, [latitude, longitude]);
 
