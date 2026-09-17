@@ -48,9 +48,12 @@ data: nothing from it runs, and the reviewer starts in a separate work directory
 reviewer's progress output, which the pull request can influence, is printed with workflow
 commands switched off. The reviewer's own scripts, the repository instructions, the
 architecture document, and the decision log are all read from the base revision, so a pull
-request cannot rewrite the reviewer that is about to judge it. The review skill comes from the
-pinned skills revision and applicable standards from the current `Mikode13/engineering` main,
-whose commit is recorded in the review input.
+request cannot rewrite the reviewer that is about to judge it. The base revision is the commit
+of `main` the workflow itself was read from, not the base commit recorded in the pull request,
+which can be older: a pull request opened before a change to the pilot would otherwise run the
+new workflow with the old scripts. The reviewed diff starts where the pull request diverges
+from it. The review skill comes from the pinned skills revision and applicable standards from
+the current `Mikode13/engineering` main, whose commit is recorded in the review input.
 
 `Publish` re-runs the full contract validation on the result it receives before it acts on it,
 and neutralizes mentions, HTML, and comment markers in every string it renders. Under
