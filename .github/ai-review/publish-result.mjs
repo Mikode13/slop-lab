@@ -105,10 +105,14 @@ function positionOf(location, lines) {
 const where = location =>
 	location.line === null ? location.path : `${location.path}:${location.line}`;
 
-/** Follow-up items that start with the ids of findings, such as "F1: ..." or "F2, F3: ...". */
+/**
+ * Follow-up items that start with the ids of findings, such as "F1: ...", "F2, F3: ...", or
+ * "F2 and F3: ...", attached to those findings, and the rest.
+ */
 function splitFollowUp(items, findings) {
 	const ids = new Set(findings.map(finding => finding.id));
 	const byFinding = new Map();
+	const attached = [];
 	const general = [];
 
 	for (const item of items) {
@@ -117,12 +121,13 @@ function splitFollowUp(items, findings) {
 			? prefixed[1].split(/[\s,]+/u).filter(word => word !== '' && word !== 'and')
 			: [];
 		if (named.length > 0 && named.every(id => ids.has(id))) {
+			attached.push({ ids: named, text: prefixed[2] });
 			for (const id of named) byFinding.set(id, [...(byFinding.get(id) ?? []), prefixed[2]]);
 		} else {
 			general.push(item);
 		}
 	}
-	return { byFinding, general };
+	return { byFinding, attached, general };
 }
 
 const origins = { pre_existing: 'pre-existing', unknown: 'unknown origin' };
@@ -192,7 +197,7 @@ const emptyPlan = ledger => ({
 	undetermined: [],
 	reopen: [],
 	ledger,
-	followUp: { byFinding: new Map(), general: [] },
+	followUp: { byFinding: new Map(), attached: [], general: [], uncarried: [] },
 });
 
 /**
@@ -212,8 +217,12 @@ function plan(result, earlierFindings, state, lines) {
 	const findings = new Map(result.findings.map(finding => [finding.id, finding]));
 	const planned = {
 		...emptyPlan([]),
-		followUp: splitFollowUp(result.follow_up, result.findings),
+		followUp: { ...splitFollowUp(result.follow_up, result.findings), uncarried: [] },
 	};
+
+	// The findings whose follow-up items appear with them: in a new comment, or in a summary entry
+	// that gives the finding's reasoning.
+	const carried = new Set();
 
 	const presentKeys = new Map();
 	for (const recheck of result.rechecks.filter(item => item.status === 'present')) {
@@ -242,6 +251,12 @@ function plan(result, earlierFindings, state, lines) {
 			conversation = 'new';
 		}
 		if (conversation === null) planned.ledger.push(earlierEntry(finding, key));
+		if (
+			conversation === 'new' ||
+			(conversation === null && (finding.blocking || finding.relevance === 'change'))
+		) {
+			carried.add(finding.id);
+		}
 
 		if (finding.blocking) {
 			planned.blocking.push({ finding, conversation, items });
@@ -249,6 +264,15 @@ function plan(result, earlierFindings, state, lines) {
 			planned.withoutLine.push({ finding, items });
 		} else if (conversation === null) {
 			planned.incidental.push(finding);
+		}
+	}
+
+	// A finding that already has a conversation, or that the summary names in one line, shows no
+	// follow-up, so an item attached to it stays in the summary instead of reaching no reader.
+	for (const { ids, text } of planned.followUp.attached) {
+		const uncarried = ids.filter(id => !carried.has(id));
+		if (uncarried.length > 0) {
+			planned.followUp.uncarried.push({ about: uncarried.map(id => findings.get(id)), text });
 		}
 	}
 
@@ -406,10 +430,12 @@ function renderSummary(report, planned) {
 				limitation => `- ${sanitize(limitation.reason)} Needed: ${sanitize(limitation.needed)}`,
 			),
 		),
-		...section(
-			'Follow-up',
-			planned.followUp.general.map(item => `- ${sanitize(item)}`),
-		),
+		...section('Follow-up', [
+			...planned.followUp.uncarried.map(
+				({ about, text }) => `- For ${about.map(compact).join(' and ')}: ${sanitize(text)}`,
+			),
+			...planned.followUp.general.map(item => `- ${sanitize(item)}`),
+		]),
 		...section(
 			'Context not supplied to the reviewer',
 			(report.omissions ?? []).map(omission => `- ${sanitize(omission)}`),

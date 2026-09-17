@@ -624,6 +624,22 @@ test('follow-up that names a finding joins its comment, and the rest stays in th
 	assert.match(summary.body.body, /### Follow-up\n\n- Re-run the checks\./u);
 });
 
+test('follow-up for a finding that gets no new comment stays in the summary', () => {
+	const { review, summary } = publish(
+		resultWith([finding('F1'), finding('F2', incidental)], {
+			follow_up: ['F2: Triage it with the request layer.', 'F1 and F2: Cover both.'],
+		}),
+	);
+
+	assert.equal(review.comments.length, 1);
+	assert.match(review.comments[0].body, /Follow-up: Cover both\./u);
+	assert.match(
+		summary.body.body,
+		/### Follow-up\n\n- For \*\*\[SHOULD FIX · pre-existing\] Finding F2\*\* \(`src\/changed\.js:2`\): Triage it with the request layer\.\n- For \*\*\[SHOULD FIX · pre-existing\] Finding F2\*\* \(`src\/changed\.js:2`\): Cover both\./u,
+	);
+	assert.doesNotMatch(summary.body.body, /For \*\*\[SHOULD FIX\] Finding F1/u);
+});
+
 test('the summary asks the questions and leaves perspectives and rechecks to the job summary', () => {
 	const { summary, jobSummary } = publish(
 		resultWith([], {
