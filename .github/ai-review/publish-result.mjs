@@ -369,6 +369,14 @@ function renderSummary(report, planned) {
 			'Found outside this change',
 			planned.incidental.map(finding => `- ${compact(finding)}. ${sanitize(finding.problem)}`),
 		),
+		// A review without a valid result still shows what earlier reviews found outside a
+		// conversation, as they last described it, instead of hiding it until a review completes.
+		...section(
+			'Found by earlier reviews, not rechecked',
+			report.valid
+				? []
+				: planned.ledger.map(finding => `- ${compact(finding)}. ${sanitize(finding.problem)}`),
+		),
 		...section('Earlier findings', [
 			...planned.fixed.map(
 				({ finding, recheck }) => `- Looks fixed: ${compact(finding)}. ${sanitize(recheck.reason)}`,
@@ -451,19 +459,21 @@ const incomplete = (report, errors) => ({
 });
 
 // The analysis job may have failed before it produced anything, so an absent or unparseable
-// report is a normal path here, not a crash.
+// report is a normal path here, not a crash. A step that stops the analysis for a known reason
+// reports it, and that reason says more than the job's conclusion.
 let report;
 try {
 	report = JSON.parse(process.env.REPORT ?? '');
 } catch {
-	report = incomplete({}, ['The analysis job produced no result.']);
+	report = incomplete({}, [`The analysis job ended as "${analyzeResult}" and produced no result.`]);
 }
 
 if (analyzeResult !== 'success') {
-	report = incomplete(report, [
-		`The analysis job ended as "${analyzeResult}".`,
-		...(report.errors ?? []),
-	]);
+	const explained = report.valid === false && report.errors?.length > 0;
+	report = incomplete(
+		report,
+		explained ? report.errors : [`The analysis job ended as "${analyzeResult}".`],
+	);
 }
 
 // The publisher never inherits the analysis job's verdict: it revalidates the result it is about
