@@ -196,3 +196,25 @@ test('an earlier BLOCKER or unclassified finding that cannot be rechecked needs 
 	assert.deepEqual(errorsOf(limited, earlier), []);
 	assert.equal(deriveOutcome(limited), 'incomplete');
 });
+
+test('a field mismatch names the fields, so a repair knows what to change', () => {
+	const withoutFindingId = recheck('e1', 'fixed');
+	delete withoutFindingId.finding_id;
+	const rechecks = [
+		{ ...withoutFindingId, severity: 'SHOULD FIX', '::warning::x': true },
+		recheck('e2', 'fixed'),
+	];
+	const errors = errorsOf(resultWith([finding('F1')], { rechecks }), earlier);
+
+	assert.deepEqual(errors, [
+		'Recheck 1 is missing `finding_id` and has unexpected `severity`, an unreadable name.',
+	]);
+
+	const withoutEvidence = finding('F1');
+	delete withoutEvidence.evidence;
+	assert.ok(
+		errorsOf(resultWith([{ ...withoutEvidence, notes: 'x' }])).includes(
+			'Finding 1 is missing `evidence` and has unexpected `notes`.',
+		),
+	);
+});
