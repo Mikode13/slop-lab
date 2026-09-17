@@ -113,7 +113,9 @@ function splitFollowUp(items, findings) {
 
 	for (const item of items) {
 		const prefixed = /^([^:]{1,80}):\s*(.+)$/su.exec(item);
-		const named = prefixed ? prefixed[1].split(/[\s,]+/u).filter(Boolean) : [];
+		const named = prefixed
+			? prefixed[1].split(/[\s,]+/u).filter(word => word !== '' && word !== 'and')
+			: [];
 		if (named.length > 0 && named.every(id => ids.has(id))) {
 			for (const id of named) byFinding.set(id, [...(byFinding.get(id) ?? []), prefixed[2]]);
 		} else {
@@ -304,6 +306,10 @@ function plan(result, earlierFindings, state, lines) {
 	return planned;
 }
 
+/** "1 new comment", "2 new comments": `plural` defaults to the singular with an "s". */
+const count = (number, singular, plural = `${singular}s`) =>
+	`${String(number)} ${number === 1 ? singular : plural}`;
+
 const section = (title, items) => (items.length > 0 ? ['', `### ${title}`, '', ...items] : []);
 
 function formatDuration(usage) {
@@ -329,7 +335,7 @@ function verdict(report, planned) {
 					'that the change is safe. What it did find is published.',
 			];
 		case 'blocked':
-			return [`Not ready to merge: ${planned.blocking.length} blocking finding(s).`];
+			return [`Not ready to merge: ${count(planned.blocking.length, 'blocking finding')}.`];
 		case 'concerns':
 			return [
 				'No blocking findings. Each `SHOULD FIX` conversation holds the merge until it is ' +
@@ -410,7 +416,7 @@ function renderSummary(report, planned) {
 		),
 		'',
 		'---',
-		[`Commit ${commit}`, `${report.attempts ?? 0} provider turn(s)`, formatDuration(report.usage)]
+		[`Commit ${commit}`, count(report.attempts ?? 0, 'provider turn'), formatDuration(report.usage)]
 			.filter(Boolean)
 			.join(' · '),
 		marker('ledger', planned.ledger),
@@ -518,7 +524,7 @@ if (planned.comments.length > 0) {
 		body: {
 			commit_id: headSha,
 			event: 'COMMENT',
-			body: `AI review of ${commit}: ${planned.comments.length} new comment(s). The summary comment has the rest.`,
+			body: `AI review of ${commit}: ${count(planned.comments.length, 'new comment')}. The summary comment has the rest.`,
 			comments: planned.comments,
 		},
 	});
@@ -540,8 +546,8 @@ for (const reply of planned.replies) {
 	});
 }
 console.log(
-	`Posted ${planned.comments.length} new comment(s) and ${planned.replies.length} ` +
-		`reply(ies) for ${headSha}.`,
+	`Posted ${count(planned.comments.length, 'new comment')} and ` +
+		`${count(planned.replies.length, 'reply', 'replies')} for ${headSha}.`,
 );
 
 const body = renderSummary(report, planned);

@@ -212,7 +212,9 @@ function published(result, options) {
 }
 
 test('a BLOCKER is commented on its line, named in the summary, and fails the check', () => {
-	const { status, outputs, review, summary } = publish(resultWith([blocker('F1')]));
+	const { status, outputs, review, summary } = publish(resultWith([blocker('F1')]), {
+		report: { attempts: 1 },
+	});
 
 	assert.equal(status, 1);
 	assert.match(outputs, /outcome=blocked\npublished=true/u);
@@ -221,7 +223,8 @@ test('a BLOCKER is commented on its line, named in the summary, and fails the ch
 		review.comments[0].body,
 		/Blocker: `AI Review \/ required` fails while a review still finds this, so the pull request cannot merge\./u,
 	);
-	assert.match(summary.body.body, /Not ready to merge: 1 blocking finding\(s\)\./u);
+	assert.match(summary.body.body, /Not ready to merge: 1 blocking finding\./u);
+	assert.match(summary.body.body, /Commit bbbbbbb · 1 provider turn$/mu);
 	assert.match(summary.body.body, /- \*\*\[BLOCKER\] Finding F1\*\* \(`src\/changed\.js:2`\)$/mu);
 	assert.doesNotMatch(summary.body.body, /Problem F1/u);
 });
@@ -608,12 +611,15 @@ test('an analysis that stopped for a known reason gives that reason instead of i
 
 test('follow-up that names a finding joins its comment, and the rest stays in the summary', () => {
 	const { review, summary } = publish(
-		resultWith([finding('F1')], {
-			follow_up: ['F1: Add a regression test.', 'Re-run the checks.'],
+		resultWith([finding('F1'), finding('F2', at('src/changed.js', 3))], {
+			follow_up: ['F1: Add a regression test.', 'F1 and F2: Test both.', 'Re-run the checks.'],
 		}),
 	);
 
+	assert.match(review.body, /: 2 new comments\./u);
 	assert.match(review.comments[0].body, /Follow-up: Add a regression test\./u);
+	assert.match(review.comments[0].body, /Follow-up: Test both\./u);
+	assert.match(review.comments[1].body, /Follow-up: Test both\./u);
 	assert.doesNotMatch(summary.body.body, /Add a regression test/u);
 	assert.match(summary.body.body, /### Follow-up\n\n- Re-run the checks\./u);
 });
