@@ -34,7 +34,9 @@ is opened, reopened, marked ready, or receives a new commit. It is triggered by
 request defines it, and only such a run can read the `ai-review` environment that holds the
 provider token. A per-pull-request concurrency group cancels superseded executions, so a new
 commit discards the result of the previous one. Analysis starts only after `CI / required`
-succeeds for the same head commit.
+succeeds for the same head commit. When that check fails or does not finish within ten
+minutes, the review stops without calling the reviewer, and its summary says why. A pull request
+that conflicts with `main` stops it at once, because GitHub runs no CI on it.
 
 The work is split across jobs that do not share credentials:
 
@@ -164,8 +166,10 @@ A finding appears where a person reviewing by hand would put it:
 
 The summary is one pull request comment that every later review updates in place. It holds the
 outcome, the blocking findings, what could not go on a line, the reviewer's questions and
-limitations, and the context the reviewer did not receive. How each perspective was reviewed,
-each recheck, and why a reply was rejected go to the job summary.
+limitations, and the context the reviewer did not receive. A review that ends without a valid
+result still lists the findings the previous summary held, as that review described them. How
+each perspective was reviewed, each recheck, and why a reply was rejected go to the job
+summary.
 
 Each review covers the whole pull request, from where it branched off `main` to its latest
 commit. Before a later review, the analysis job collects every finding earlier reviews

@@ -46,7 +46,7 @@ jobs:
       issues: read
       pull-requests: read
     outputs:
-      report: ${{ steps.review.outputs.report || steps.missing.outputs.report }}
+      report: ${{ steps.review.outputs.report || steps.missing.outputs.report || steps.ci.outputs.report }}
     env:
       # The trusted base is the commit of main this workflow file was read from. The base commit in
       # the event can be older than main, and a pull request opened before a change to the pilot
@@ -57,9 +57,24 @@ jobs:
       REPOSITORY: ${{ github.repository }}
     steps:
       - name: Wait for deterministic CI
+        id: ci
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Each way this step stops is reported as the reason the review is incomplete, so the
+          # summary says what to do instead of only that the analysis failed.
+          stop() {
+            echo "$1"
+            delimiter="report-${RANDOM}${RANDOM}"
+            {
+              printf 'report<<%s\n' "$delimiter"
+              jq --compact-output --null-input --arg reason "$1" \
+                '{valid: false, outcome: "incomplete", errors: [$reason]}'
+              printf '%s\n' "$delimiter"
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          }
+
           for attempt in $(seq 1 60); do
             conclusion="$(gh api "repos/${REPOSITORY}/commits/${HEAD_SHA}/check-runs?per_page=100" \
               --jq '[.check_runs[] | select(.name == "CI / required")] | sort_by(.started_at) | last | .conclusion // ""')"
@@ -70,17 +85,22 @@ jobs:
 
             case "$conclusion" in
               action_required | cancelled | failure | neutral | skipped | stale | timed_out)
-                echo "CI / required finished as ${conclusion}; there is nothing worth reviewing yet."
-                exit 1
+                stop "\`CI / required\` finished as ${conclusion}, so there is nothing worth reviewing yet. A commit that fixes it starts a new review."
                 ;;
             esac
+
+            # GitHub does not run pull request workflows while the branch conflicts with its base,
+            # so no CI result will come until someone resolves the conflict.
+            state="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.mergeable_state')"
+            if [ "$state" = "dirty" ]; then
+              stop "The pull request conflicts with \`main\`, and GitHub runs no CI on it until the conflict is resolved. Resolving it starts a new review."
+            fi
 
             echo "Waiting for CI / required (attempt ${attempt} of 60)."
             sleep 10
           done
 
-          echo "CI / required did not finish within ten minutes."
-          exit 1
+          stop "\`CI / required\` did not finish within ten minutes. Re-run this review once it has."
 
       # The runner context is not available to a job-level `env`, so the directories the later
       # steps and the Node scripts share are exported here instead.

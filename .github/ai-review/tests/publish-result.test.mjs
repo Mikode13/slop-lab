@@ -555,7 +555,7 @@ test('a result that leaves an earlier finding unrechecked is incomplete', () => 
 	);
 });
 
-test('an invalid report keeps the findings the previous summary carried', () => {
+test('an invalid report keeps and still shows the findings the previous summary carried', () => {
 	const first = published(resultWith([finding('F1', incidental)]));
 	const ledger = readMarker('ledger', first.summary.body.body);
 
@@ -572,7 +572,38 @@ test('an invalid report keeps the findings the previous summary carried', () => 
 	assert.equal(failed.status, 1);
 	assert.match(failed.outputs, /outcome=incomplete\npublished=true/u);
 	assert.match(failed.summary.body.body, /- The reviewer timed out\./u);
+	assert.match(
+		failed.summary.body.body,
+		/### Found by earlier reviews, not rechecked\n\n- \*\*\[SHOULD FIX\] Finding F1\*\* \(`src\/changed\.js:2`\)\. Problem F1\./u,
+	);
 	assert.deepEqual(readMarker('ledger', failed.summary.body.body), ledger);
+});
+
+test('an analysis that stopped for a known reason gives that reason instead of its conclusion', () => {
+	const reason = 'The pull request conflicts with `main`.';
+	const stopped = publish(resultWith([]), {
+		report: { valid: false, outcome: 'incomplete', errors: [reason], result: null },
+		env: { ANALYZE_RESULT: 'failure' },
+	});
+	assert.equal(stopped.status, 1);
+	assert.match(
+		stopped.summary.body.body,
+		/## AI review: incomplete\n[^#]*\n- The pull request conflicts/u,
+	);
+	assert.doesNotMatch(stopped.summary.body.body, /ended as/u);
+
+	const silent = publish(resultWith([]), {
+		report: { valid: false },
+		env: { ANALYZE_RESULT: 'cancelled', REPORT: '' },
+	});
+	assert.match(
+		silent.summary.body.body,
+		/- The analysis job ended as "cancelled" and produced no result\./u,
+	);
+
+	const failedLate = publish(resultWith([finding('F1')]), { env: { ANALYZE_RESULT: 'failure' } });
+	assert.match(failedLate.summary.body.body, /- The analysis job ended as "failure"\./u);
+	assert.equal(failedLate.review, null);
 });
 
 test('follow-up that names a finding joins its comment, and the rest stays in the summary', () => {
