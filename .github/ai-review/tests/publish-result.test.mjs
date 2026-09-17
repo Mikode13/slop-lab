@@ -316,7 +316,9 @@ test('the summary comment is created once and then updated in place', () => {
 });
 
 test('publishing the same report again writes nothing', () => {
-	const result = resultWith([finding('F1'), finding('F2', incidental)]);
+	const result = resultWith([finding('F1'), finding('F2', incidental)], {
+		follow_up: ['F1: Add a regression test.', 'F2: Triage it.'],
+	});
 	const first = published(result);
 	const again = publish(result, { threads: first.threads(), comments: first.comments });
 

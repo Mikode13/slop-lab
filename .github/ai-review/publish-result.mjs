@@ -220,8 +220,8 @@ function plan(result, earlierFindings, state, lines) {
 		followUp: { ...splitFollowUp(result.follow_up, result.findings), uncarried: [] },
 	};
 
-	// The findings whose follow-up items appear with them: in a new comment, or in a summary entry
-	// that gives the finding's reasoning.
+	// The findings whose follow-up items appear with them: in the comment this result opens, now or
+	// on an earlier delivery of the same report, or in a summary entry that gives the reasoning.
 	const carried = new Set();
 
 	const presentKeys = new Map();
@@ -251,8 +251,10 @@ function plan(result, earlierFindings, state, lines) {
 			conversation = 'new';
 		}
 		if (conversation === null) planned.ledger.push(earlierEntry(finding, key));
+		const ownComment = thread !== undefined && key === `${fingerprint}-${finding.id}`;
 		if (
 			conversation === 'new' ||
+			ownComment ||
 			(conversation === null && (finding.blocking || finding.relevance === 'change'))
 		) {
 			carried.add(finding.id);
