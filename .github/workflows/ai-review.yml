@@ -48,7 +48,10 @@ jobs:
     outputs:
       report: ${{ steps.review.outputs.report || steps.missing.outputs.report }}
     env:
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      # The trusted base is the commit of main this workflow file was read from. The base commit in
+      # the event can be older than main, and a pull request opened before a change to the pilot
+      # would then run this workflow with the reviewer and publisher from before that change.
+      BASE_SHA: ${{ github.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       REPOSITORY: ${{ github.repository }}
@@ -230,7 +233,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.0
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.sha }}
           sparse-checkout: .github/ai-review
 
       - name: Set up Node.js
@@ -242,7 +245,7 @@ jobs:
         id: publish
         env:
           ANALYZE_RESULT: ${{ needs.analyze.result }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
