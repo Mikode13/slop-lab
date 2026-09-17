@@ -44,8 +44,33 @@ const evidenceKinds = ['inspected', 'reported', 'executed'];
 const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isNonEmptyString = value => typeof value === 'string' && value.trim() !== '';
 const isNullableString = value => value === null || isNonEmptyString(value);
-const exactKeys = (value, keys) =>
-	isObject(value) && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+
+/** A field name the reviewer wrote, quoted only when it cannot carry anything but a name. */
+const fieldName = key =>
+	/^[A-Za-z_][\w-]{0,39}$/u.test(key) ? `\`${key}\`` : 'an unreadable name';
+
+const fieldList = keys =>
+	keys.length > 5
+		? `${keys.slice(0, 5).map(fieldName).join(', ')} and ${String(keys.length - 5)} more`
+		: keys.map(fieldName).join(', ');
+
+/**
+ * Checks that `value` is an object with exactly `keys`. A mismatch names the fields that are
+ * missing and the ones that are not in the contract, because a repair can only correct a shape
+ * it is told about, and a rejected reply is not kept anywhere else.
+ */
+function checkFields(collect, value, keys, subject) {
+	if (!isObject(value)) return collect.check(false, `${subject} is not an object.`);
+
+	const present = Object.keys(value);
+	const missing = keys.filter(key => !present.includes(key));
+	const unexpected = present.filter(key => !keys.includes(key));
+	const problems = [
+		...(missing.length > 0 ? [`is missing ${fieldList(missing)}`] : []),
+		...(unexpected.length > 0 ? [`has unexpected ${fieldList(unexpected)}`] : []),
+	];
+	return collect.check(problems.length === 0, `${subject} ${problems.join(' and ')}.`);
+}
 
 /**
  * Derives the outcome the contract requires for this result. `incomplete` takes precedence
@@ -79,22 +104,21 @@ function createCollector() {
 }
 
 function checkSource(collect, value, where) {
-	if (!collect.check(exactKeys(value, ['ref', 'revision']), `${where} is not a source.`)) return;
+	if (!checkFields(collect, value, ['ref', 'revision'], where)) return;
 	collect.check(isNonEmptyString(value.ref), `${where} has no reference.`);
 	collect.check(isNullableString(value.revision), `${where} has an invalid revision.`);
 }
 
 function checkEvidence(collect, value, where) {
-	const shape = exactKeys(value, ['source', 'kind', 'observation']);
-	if (!collect.check(shape, `${where} is not an evidence record.`)) return;
+	if (!checkFields(collect, value, ['source', 'kind', 'observation'], where)) return;
 	checkSource(collect, value.source, `${where} source`);
 	collect.check(evidenceKinds.includes(value.kind), `${where} has an invalid evidence kind.`);
 	collect.check(isNonEmptyString(value.observation), `${where} has no observation.`);
 }
 
 function checkScope(collect, result, expected) {
-	const shape = exactKeys(result.scope, ['repository', 'base', 'head', 'paths']);
-	if (!collect.check(shape, 'The result scope has missing or unexpected fields.')) return;
+	const fields = ['repository', 'base', 'head', 'paths'];
+	if (!checkFields(collect, result.scope, fields, 'The result scope')) return;
 
 	const { repository, base, head, paths } = result.scope;
 	collect.check(repository === expected.repository, 'The result names a different repository.');
@@ -107,17 +131,14 @@ function checkScope(collect, result, expected) {
 }
 
 function checkPerspectives(collect, result, findingIds) {
-	const shape = exactKeys(result.perspectives, perspectiveKeys);
-	if (!collect.check(shape, 'The result must contain exactly the five review perspectives.')) {
+	if (!checkFields(collect, result.perspectives, perspectiveKeys, 'The perspectives object')) {
 		return;
 	}
 
 	for (const key of perspectiveKeys) {
 		const perspective = result.perspectives[key];
 		const fields = ['depth', 'coverage', 'reason', 'skills', 'finding_ids'];
-		if (!collect.check(exactKeys(perspective, fields), `Perspective ${key} has invalid fields.`)) {
-			continue;
-		}
+		if (!checkFields(collect, perspective, fields, `Perspective ${key}`)) continue;
 
 		collect.check(depths.includes(perspective.depth), `Perspective ${key} has an invalid depth.`);
 		collect.check(
@@ -159,9 +180,7 @@ function checkFinding(collect, finding, index, seen) {
 		'evidence',
 	];
 	const where = `Finding ${index + 1}`;
-	if (!collect.check(exactKeys(finding, fields), `${where} has missing or unexpected fields.`)) {
-		return;
-	}
+	if (!checkFields(collect, finding, fields, where)) return;
 
 	if (collect.check(isNonEmptyString(finding.id), `${where} has no ID.`)) {
 		collect.check(!seen.has(finding.id), `Finding IDs must be unique; ${finding.id} repeats.`);
@@ -196,12 +215,7 @@ function checkFinding(collect, finding, index, seen) {
 	}
 
 	const location = finding.location;
-	if (
-		collect.check(
-			exactKeys(location, ['path', 'revision', 'line', 'symbol']),
-			`${where} has an invalid location.`,
-		)
-	) {
+	if (checkFields(collect, location, ['path', 'revision', 'line', 'symbol'], `${where} location`)) {
 		collect.check(isNonEmptyString(location.path), `${where} has no location path.`);
 		collect.check(
 			isNullableString(location.revision),
@@ -231,9 +245,7 @@ function checkVerification(collect, result, findingIds) {
 	result.verification.forEach((item, index) => {
 		const fields = ['candidate_id', 'disposition', 'finding_id', 'reason', 'checked_sources'];
 		const where = `Verification ${index + 1}`;
-		if (!collect.check(exactKeys(item, fields), `${where} has missing or unexpected fields.`)) {
-			return;
-		}
+		if (!checkFields(collect, item, fields, where)) return;
 
 		if (collect.check(isNonEmptyString(item.candidate_id), `${where} has no candidate ID.`)) {
 			collect.check(!candidates.has(item.candidate_id), `${where} repeats a candidate ID.`);
@@ -278,7 +290,10 @@ function checkRechecks(collect, result, findingIds, earlier) {
 	result.rechecks.forEach((recheck, index) => {
 		const where = `Recheck ${index + 1}`;
 		const fields = ['key', 'status', 'finding_id', 'reason'];
-		if (!collect.check(exactKeys(recheck, fields), `${where} has missing or unexpected fields.`)) {
+		if (!checkFields(collect, recheck, fields, where)) {
+			// The key alone still says which earlier finding this entry answers, so a malformed
+			// entry is reported once, not again as an earlier finding nobody rechecked.
+			if (isObject(recheck) && supplied.has(recheck.key)) answered.add(recheck.key);
 			return;
 		}
 
@@ -324,7 +339,7 @@ function checkQuestionsAndLimitations(collect, result) {
 		result.limitations.forEach((limitation, index) => {
 			const where = `Limitation ${index + 1}`;
 			const fields = ['reason', 'needed', 'perspectives'];
-			if (!collect.check(exactKeys(limitation, fields), `${where} has invalid fields.`)) return;
+			if (!checkFields(collect, limitation, fields, where)) return;
 
 			collect.check(isNonEmptyString(limitation.reason), `${where} has no reason.`);
 			collect.check(isNonEmptyString(limitation.needed), `${where} does not say what is needed.`);
@@ -351,7 +366,7 @@ function checkQuestionsAndLimitations(collect, result) {
 	result.questions.forEach((question, index) => {
 		const where = `Question ${index + 1}`;
 		const fields = ['question', 'perspective', 'prevents_completion'];
-		if (!collect.check(exactKeys(question, fields), `${where} has invalid fields.`)) return;
+		if (!checkFields(collect, question, fields, where)) return;
 
 		collect.check(isNonEmptyString(question.question), `${where} is empty.`);
 		collect.check(
@@ -385,9 +400,7 @@ function checkQuestionsAndLimitations(collect, result) {
 export function validateResult(value, expected) {
 	const collect = createCollector();
 
-	if (
-		!collect.check(exactKeys(value, resultKeys), 'The result has missing or unexpected fields.')
-	) {
+	if (!checkFields(collect, value, resultKeys, 'The result')) {
 		return { valid: false, errors: collect.errors, outcome: 'incomplete', result: null };
 	}
 
