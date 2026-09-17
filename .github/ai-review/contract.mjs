@@ -1,5 +1,5 @@
 /**
- * Version 1 of the `mikode-review` result contract, as published at the pinned skills
+ * Version 2 of the `mikode-review` result contract, as published at the pinned skills
  * revision recorded in the workflow.
  *
  * The reviewer is asked to validate its own output, and a self-check is not proof of
@@ -16,7 +16,7 @@ export const perspectiveKeys = [
 	'evidence_delivery',
 ];
 
-export const outcomes = ['clean', 'blocked', 'incomplete'];
+export const outcomes = ['clean', 'suggestions', 'concerns', 'blocked', 'incomplete'];
 
 const resultKeys = [
 	'context',
@@ -26,14 +26,16 @@ const resultKeys = [
 	'outcome',
 	'perspectives',
 	'questions',
+	'rechecks',
 	'scope',
 	'verification',
 	'version',
 ];
 
-const severities = ['BLOCKER', 'SHOULD FIX', 'SUGGESTION'];
-const blockingSeverities = new Set(['BLOCKER', 'SHOULD FIX']);
+export const severities = ['BLOCKER', 'SHOULD FIX', 'SUGGESTION'];
 const origins = ['introduced', 'pre_existing', 'unknown'];
+const relevances = ['change', 'incidental'];
+const recheckStatuses = ['present', 'fixed', 'undetermined'];
 const depths = ['baseline', 'deep'];
 const coverages = ['complete', 'incomplete', 'not_applicable'];
 const dispositions = ['confirmed', 'duplicate', 'rejected', 'unresolved'];
@@ -47,21 +49,22 @@ const exactKeys = (value, keys) =>
 
 /**
  * Derives the outcome the contract requires for this result. `incomplete` takes precedence
- * over `blocked` so that unfinished review work can never present itself as a decision.
+ * so that unfinished review work can never present itself as a decision, and an incidental
+ * finding below `BLOCKER` never changes the outcome.
  */
 export function deriveOutcome(result) {
 	const incomplete =
 		result.limitations.length > 0 ||
 		perspectiveKeys.some(key => result.perspectives[key]?.coverage === 'incomplete') ||
 		result.verification.some(item => item.disposition === 'unresolved') ||
-		result.findings.some(
-			finding =>
-				finding.severity === null ||
-				(finding.origin === 'unknown' && blockingSeverities.has(finding.severity)),
-		);
+		result.findings.some(finding => finding.severity === null);
 
 	if (incomplete) return 'incomplete';
-	return result.findings.some(finding => finding.blocking === true) ? 'blocked' : 'clean';
+	if (result.findings.some(finding => finding.blocking === true)) return 'blocked';
+	const change = result.findings.filter(finding => finding.relevance === 'change');
+	if (change.some(finding => finding.severity === 'SHOULD FIX')) return 'concerns';
+	if (change.some(finding => finding.severity === 'SUGGESTION')) return 'suggestions';
+	return 'clean';
 }
 
 function createCollector() {
@@ -146,6 +149,7 @@ function checkFinding(collect, finding, index, seen) {
 		'id',
 		'severity',
 		'origin',
+		'relevance',
 		'blocking',
 		'title',
 		'problem',
@@ -170,11 +174,21 @@ function checkFinding(collect, finding, index, seen) {
 	);
 	collect.check(origins.includes(finding.origin), `${where} has an invalid origin.`);
 
-	const expectedBlocking =
-		finding.origin === 'introduced' && blockingSeverities.has(finding.severity);
+	collect.check(relevances.includes(finding.relevance), `${where} has an invalid relevance.`);
 	collect.check(
-		finding.blocking === expectedBlocking,
-		`${where} derives its blocking status from something other than severity and origin.`,
+		finding.blocking === (finding.severity === 'BLOCKER'),
+		`${where} is blocking when it is not a BLOCKER, or not blocking when it is.`,
+	);
+	// Only a pre-existing defect can be incidental, and a pre-existing suggestion always is.
+	collect.check(
+		finding.origin === 'pre_existing' || finding.relevance === 'change',
+		`${where} is not pre-existing, so its relevance must be change.`,
+	);
+	collect.check(
+		finding.origin !== 'pre_existing' ||
+			finding.severity !== 'SUGGESTION' ||
+			finding.relevance === 'incidental',
+		`${where} is a pre-existing suggestion, so its relevance must be incidental.`,
 	);
 
 	for (const field of ['title', 'problem', 'consequence', 'recommended_direction']) {
@@ -249,6 +263,60 @@ function checkVerification(collect, result, findingIds) {
 	}
 }
 
+/**
+ * Every earlier finding the caller supplied gets exactly one recheck. A present one points at
+ * the finding that describes it now. An undetermined one whose severity is `BLOCKER` or was
+ * never classified needs a limitation, because a review that cannot tell whether blocking harm
+ * is gone has not finished.
+ */
+function checkRechecks(collect, result, findingIds, earlier) {
+	if (!collect.check(Array.isArray(result.rechecks), 'Rechecks must be an array.')) return;
+
+	const supplied = new Map(earlier.map(finding => [finding.key, finding]));
+	const answered = new Set();
+
+	result.rechecks.forEach((recheck, index) => {
+		const where = `Recheck ${index + 1}`;
+		const fields = ['key', 'status', 'finding_id', 'reason'];
+		if (!collect.check(exactKeys(recheck, fields), `${where} has missing or unexpected fields.`)) {
+			return;
+		}
+
+		if (
+			collect.check(
+				supplied.has(recheck.key),
+				`${where} names an earlier finding that was not supplied.`,
+			)
+		) {
+			collect.check(
+				!answered.has(recheck.key),
+				`${where} repeats the earlier finding ${recheck.key}.`,
+			);
+			answered.add(recheck.key);
+		}
+		collect.check(recheckStatuses.includes(recheck.status), `${where} has an invalid status.`);
+		collect.check(isNonEmptyString(recheck.reason), `${where} has no reason.`);
+
+		if (recheck.status === 'present') {
+			collect.check(findingIds.has(recheck.finding_id), `${where} points at an unknown finding.`);
+		} else {
+			collect.check(recheck.finding_id === null, `${where} must not point at a finding.`);
+		}
+
+		const severity = supplied.get(recheck.key)?.severity;
+		collect.check(
+			recheck.status !== 'undetermined' ||
+				(severity !== 'BLOCKER' && severity !== null) ||
+				(Array.isArray(result.limitations) && result.limitations.length > 0),
+			`${where} leaves an earlier ${severity ?? 'unclassified'} finding undetermined without a limitation.`,
+		);
+	});
+
+	for (const key of supplied.keys()) {
+		collect.check(answered.has(key), `The earlier finding ${key} was not rechecked.`);
+	}
+}
+
 function checkQuestionsAndLimitations(collect, result) {
 	const limited = new Set();
 
@@ -310,7 +378,8 @@ function checkQuestionsAndLimitations(collect, result) {
  * contract derives. Anything this rejects is an incomplete execution, never a clean review.
  *
  * @param {unknown} value the parsed result returned by the reviewer.
- * @param {{ repository: string, base: string, head: string }} expected the reviewed change.
+ * @param {{ repository: string, base: string, head: string, earlier?: { key: string, severity: string | null }[] }} expected
+ *   the reviewed change and the earlier findings supplied to the reviewer.
  * @returns {{ valid: boolean, errors: string[], outcome: string, result: unknown }}
  */
 export function validateResult(value, expected) {
@@ -322,7 +391,7 @@ export function validateResult(value, expected) {
 		return { valid: false, errors: collect.errors, outcome: 'incomplete', result: null };
 	}
 
-	collect.check(value.version === 1, 'The result version must be 1.');
+	collect.check(value.version === 2, 'The result version must be 2.');
 	collect.check(outcomes.includes(value.outcome), 'The reported outcome is invalid.');
 
 	if (collect.check(isObject(value.scope), 'The result has no scope.')) {
@@ -339,6 +408,7 @@ export function validateResult(value, expected) {
 	}
 
 	checkVerification(collect, value, findingIds);
+	checkRechecks(collect, value, findingIds, expected.earlier ?? []);
 	checkQuestionsAndLimitations(collect, value);
 
 	if (collect.check(Array.isArray(value.context), 'Context must be an array.')) {

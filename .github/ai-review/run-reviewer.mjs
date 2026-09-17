@@ -11,7 +11,7 @@
 
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { validateResult } from './contract.mjs';
@@ -26,6 +26,7 @@ const repository = environment('REPOSITORY');
 const baseSha = environment('BASE_SHA');
 const headSha = environment('HEAD_SHA');
 const workDirectory = environment('OUTPUT_DIR');
+const evidenceDirectory = environment('EVIDENCE_DIR');
 
 const harnessPackage = process.env.HARNESS_PACKAGE ?? '@mikode13/harness-cli@1.1.0';
 const reviewerCommand = process.env.REVIEWER_COMMAND ?? 'npx';
@@ -33,9 +34,16 @@ const model = process.env.REVIEW_MODEL ?? 'opus';
 const effort = process.env.REVIEW_EFFORT ?? 'high';
 const timeoutMs = Number(process.env.REVIEW_TIMEOUT_SECONDS ?? 600) * 1000;
 
-const expected = { repository, base: baseSha, head: headSha };
+// The result has to recheck exactly the earlier findings the prompt supplied, and the publisher
+// revalidates it against the same list, so the list travels in the report.
+const earlierPath = join(evidenceDirectory, 'earlier-findings.json');
+const earlier = existsSync(earlierPath) ? JSON.parse(readFileSync(earlierPath, 'utf8')) : [];
+const expected = { repository, base: baseSha, head: headSha, earlier };
 const usage = [];
 const bytes = text => Buffer.byteLength(text, 'utf8');
+
+/** Keeps a logged message on one line, so text the reviewer wrote cannot start a workflow command. */
+const oneLine = text => String(text).replace(/\s+/gu, ' ').trim();
 
 /**
  * Runs the reviewer once. The prompt travels as a file that `harness-cli` reads itself: the
@@ -113,7 +121,13 @@ function extractObject(text) {
  */
 function reportProgress(turn) {
 	const tail = turn.stderr.trimEnd().split('\n').slice(-20).join('\n');
-	if (tail !== '') console.log(`Reviewer progress (last lines):\n${tail}`);
+	if (tail === '') return;
+	// The tail is text the reviewer wrote, so workflow commands are switched off while it is
+	// printed: a line of it that starts with "::" stays a log line.
+	const resume = randomUUID();
+	console.log(`::stop-commands::${resume}`);
+	console.log(`Reviewer progress (last lines):\n${tail}`);
+	console.log(`::${resume}::`);
 }
 
 /** Turns one completed turn into either a validated result or the reasons it was rejected. */
@@ -156,11 +170,11 @@ function interpret(turn) {
 const repairPrompt = (
 	reply,
 	errors,
-) => `Your previous reply was rejected because it did not satisfy the version 1
+) => `Your previous reply was rejected because it did not satisfy the version 2
 mikode-review result contract. Return the same review as a valid result object.
 
-Do not review anything again, do not change a severity, an origin, a blocking status, or an
-outcome to make validation pass, and do not invent findings or evidence you did not already
+Do not review anything again, do not change a severity, an origin, a relevance, a blocking
+status, a recheck status, or an outcome to make validation pass, and do not invent findings or evidence you did not already
 have. Correct only the structure, and keep "scope" exactly
 {"repository": "${repository}", "base": "${baseSha}", "head": "${headSha}", "paths": [...]}.
 If the review underlying the previous reply cannot be expressed as a valid result, return a
@@ -181,6 +195,10 @@ let outcome = 'incomplete';
 let result = null;
 let errors = [];
 let attempts = 0;
+let repairReasons = [];
+let failedRepairReasons = [];
+
+const bounded = reasons => reasons.slice(0, 20).map(reason => oneLine(reason).slice(0, 300));
 
 if (!buildReport.fits) {
 	const missing = buildReport.missingEssentials ?? [];
@@ -203,15 +221,27 @@ if (!buildReport.fits) {
 
 	if (repairable) {
 		attempts = 2;
+		// Kept even when the repair succeeds: they show which part of the contract a first reply
+		// gets wrong, which is what tuning the contract needs.
+		repairReasons = bounded(attempt.errors);
 		console.log('The first reply failed validation; attempting one repair.');
+		for (const reason of repairReasons) console.log(`Rejected before repair: ${reason}`);
 		const repairPath = join(workDirectory, 'repair-prompt.txt');
 		writeFileSync(repairPath, repairPrompt(attempt.reply, attempt.errors));
 		const repaired = interpret(await runTurn(repairPath));
 		if (repaired.result) {
 			attempt = repaired;
 		} else {
+			failedRepairReasons = bounded(repaired.errors);
+			for (const reason of failedRepairReasons) console.log(`Rejected after repair: ${reason}`);
+			// The contract's validation messages help tune the contract, not the author, so the pull
+			// request gets one plain reason; a failure to run the repair at all is still named.
 			attempt = {
-				errors: [...attempt.errors, ...repaired.errors.map(error => `After repair: ${error}`)],
+				errors: [
+					"The reviewer's reply did not satisfy the result contract, and one repair did not " +
+						'produce a valid result.',
+					...(typeof repaired.reply === 'string' ? [] : repaired.errors),
+				],
 			};
 		}
 	}
@@ -233,7 +263,10 @@ const report = {
 	errors,
 	omissions: buildReport.omissions,
 	attempts,
+	repairReasons,
+	failedRepairReasons,
 	usage,
+	earlier,
 	result,
 };
 
@@ -241,19 +274,15 @@ const serialized = JSON.stringify(report);
 writeFileSync(join(workDirectory, 'review-report.json'), JSON.stringify(report, null, 2));
 
 // A job output is capped near 1 MB, so an oversized report is replaced by the fact that it was
-// oversized rather than truncated into something the publisher would fail to parse.
+// oversized rather than truncated into something the publisher would fail to parse. Every other
+// field is kept from the report itself, so a field added to one shape reaches the other.
 const deliverable =
 	bytes(serialized) > 900_000
 		? JSON.stringify({
-				repository,
-				base: baseSha,
-				head: headSha,
+				...report,
 				valid: false,
 				outcome: 'incomplete',
 				errors: ['The review result was too large to hand to the publication job.'],
-				omissions: buildReport.omissions,
-				attempts,
-				usage,
 				result: null,
 			})
 		: serialized;
@@ -265,4 +294,4 @@ console.log(`Outcome: ${outcome} after ${attempts} attempt(s).`);
 for (const entry of usage) {
 	console.log(`Usage: ${entry.inputTokens} in, ${entry.outputTokens} out, ${entry.duration}s.`);
 }
-for (const error of errors) console.log(`Rejected: ${error}`);
+for (const error of errors) console.log(`Rejected: ${oneLine(error)}`);

@@ -23,10 +23,10 @@ env:
   # The pilot is frozen on these revisions so that a result can be attributed to a reviewer,
   # not to whatever the ecosystem published that morning.
   HARNESS_PACKAGE: '@mikode13/harness-cli@1.1.0'
-  SKILL_REVISION: 6015886996d5fbadc21aa49353f7e476ae1737be
+  SKILL_REVISION: e62054e152ddab286f7325e8830170a22ee722d7
   REVIEW_MODEL: opus
   REVIEW_EFFORT: high
-  REVIEW_TIMEOUT_SECONDS: '600'
+  REVIEW_TIMEOUT_SECONDS: '900'
 
 jobs:
   # Reads the change and spends the provider credential. It has no write access anywhere, and
@@ -37,7 +37,8 @@ jobs:
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Up to eleven minutes of waiting for CI, two reviewer turns of fifteen minutes, and setup.
+    timeout-minutes: 50
     environment: ai-review
     permissions:
       checks: read
@@ -47,7 +48,10 @@ jobs:
     outputs:
       report: ${{ steps.review.outputs.report || steps.missing.outputs.report }}
     env:
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      # The trusted base is the commit of main this workflow file was read from. The base commit in
+      # the event can be older than main, and a pull request opened before a change to the pilot
+      # would then run this workflow with the reviewer and publisher from before that change.
+      BASE_SHA: ${{ github.sha }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       REPOSITORY: ${{ github.repository }}
@@ -173,6 +177,14 @@ jobs:
             echo "The base revision carries no pilot reviewer, so this change cannot be reviewed by it."
           fi
 
+      # Earlier findings are rechecked rather than rediscovered, so a finding the reviewer happens
+      # not to find again is not taken as fixed.
+      - name: Collect the findings earlier reviews published
+        if: steps.trusted.outputs.present == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node "${BASE_DIR}/.github/ai-review/collect-earlier-findings.mjs"
+
       - name: Build the review prompt
         if: steps.trusted.outputs.present == 'true'
         run: node "${BASE_DIR}/.github/ai-review/build-prompt.mjs"
@@ -221,7 +233,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.0
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.sha }}
           sparse-checkout: .github/ai-review
 
       - name: Set up Node.js
@@ -233,7 +245,7 @@ jobs:
         id: publish
         env:
           ANALYZE_RESULT: ${{ needs.analyze.result }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.sha }}
           GITHUB_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -254,15 +266,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           OUTCOME: ${{ steps.publish.outputs.outcome }}
-          PUBLISHED: ${{ steps.publish.outcome }}
+          PUBLISHED: ${{ steps.publish.outputs.published }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          if [ "$PUBLISHED" = success ]; then
-            state=success
-            description="Review completed: ${OUTCOME}."
-          else
-            state=failure
+          # Only a BLOCKER holds the merge back. SHOULD FIX and SUGGESTION findings open
+          # conversations, which the ruleset already requires someone to resolve.
+          state=failure
+          if [ "$PUBLISHED" != true ]; then
             description="No completed review for this commit${OUTCOME:+ (${OUTCOME})}."
+          else
+            case "$OUTCOME" in
+              clean | suggestions | concerns)
+                state=success
+                description="Review completed: ${OUTCOME}."
+                ;;
+              blocked)
+                description="Review completed: blocked by a BLOCKER finding."
+                ;;
+              *)
+                description="Review incomplete: not evidence that the change is safe."
+                ;;
+            esac
           fi
 
           gh api "repos/${REPOSITORY}/statuses/${HEAD_SHA}" \
