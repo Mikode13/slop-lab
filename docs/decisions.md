@@ -223,14 +223,16 @@ named problem still exists is more reliable than hoping the model finds it again
 
 ## Give the Pokémon feature domain, application, infrastructure, and UI folders
 
-**Decision.** `src/pokemon/` is split into `domain/` (`models/` plus the `pokemonRepository`
-port under `interfaces/`), `application/useCases/`, `infrastructure/` (`models/` for the
+**Decision.** `src/pokemon/` is split into `domain/` (`model/` plus the `pokemonRepository`
+port under `repository/`), `application/useCase/`, `infrastructure/` (`model/` for the
 PokéAPI response shapes and mappers, `repository/` for the adapter), and `ui/`. Each layer's
 subfolder groups files by artifact kind so a module with several models, ports, or adapters
-does not collapse into one flat directory. The composition root and a dependency-injection
-library stay out of this pull request; the use case still constructs its own
-`PokemonRepositoryImpl` directly, and that construction moves only once the composition root
-lands.
+does not collapse into one flat directory; a port's folder is named for what kind of
+contract it is (`repository/` here) rather than a generic `interfaces/`, since a domain can
+define other kinds of ports later that aren't repository-shaped. The composition root and a
+dependency-injection library stay out of this pull request; the use case still constructs
+its own `PokemonApiRepository` directly, and that construction moves only once the
+composition root lands.
 
 **Context.** The infrastructure layer's mapping used classes with a `toDomain()` method
 (`PokemonDetailResponseImpl`, `PokemonListResponse`) that axios was expected to construct from
@@ -246,7 +248,7 @@ a listing-without-detail view that is not planned.
 **Consequences.** `toDomain()` is now a plain function (`pokemonDetailToDomain`,
 `pokemonListItemToDomain`) applied explicitly to the parsed response inside the repository,
 with no class standing in for data that was never instantiated. `PokemonRepository` lives
-under `domain/interfaces/`, not `application/`; see "Move project-owned ports from
+under `domain/repository/`, not `application/`; see "Move project-owned ports from
 application to domain" below for why. Unit tests cover both mapper functions and the
 `getAllPokemonDetailsUseCase` orchestration with a faked repository, per the testing standard.
 Response-shape validation remains absent by design, as `docs/decisions.md`'s first entry
@@ -282,3 +284,52 @@ application, infrastructure, and UI folders") is the first to apply it.
 **Lesson.** The boundary other modules are meant to depend on should itself depend on as
 little as possible. A layer that is already allowed to reach into concrete infrastructure
 disqualifies itself from being that boundary, whatever else recommends it.
+
+## Name every layer subfolder in the singular
+
+**Decision.** Layer subfolders are always singular — `model/`, `repository/`, `useCase/` —
+regardless of how many files end up inside. Applied retroactively to `src/pokemon/`
+(`models/` → `model/`, `useCases/` → `useCase/`) so both features match.
+
+**Context.** The folders were plural because English pluralizes a folder holding several
+files of one kind. That reads fine until a folder happens to hold exactly one file, at
+which point "models/" for one file looks like a naming mistake, and nothing about the
+folder's role explains why. Counting files to decide the name creates a question — is one
+enough to justify the plural? — that has no principled answer and would recur every time a
+new feature's layer starts small.
+
+**Consequences.** The folder name states what kind of thing lives there, not how many
+happen to right now. `docs/module-structure.md`'s example and every naming rule that
+referenced a plural folder are updated to match.
+
+**Lesson.** A naming rule that depends on counting the files it names isn't a rule, it's a
+question you'll answer differently every time. Name the category, not the count.
+
+## Give the Weather feature domain, application, infrastructure, and UI folders
+
+**Decision.** `src/weather/` is split the same way as Pokémon: `domain/model/` +
+`domain/repository/` (a single `ForecastRepository` port exposing `getCoordinates` and
+`getForecast` — one port, not two, because nothing in this app needs geocoding without a
+forecast to attach it to), `application/` (`getForecastUseCase`, combining both calls),
+`infrastructure/model/` + `infrastructure/repository/` (`ForecastApiRepository`), and `ui/`.
+`LocatedForecastModel` extends `ForecastModel` rather than repeating its fields, adding only
+`location`, `country`, `latitude`, and `longitude` — it is a forecast with where it's for
+attached, not an unrelated combined shape, and naming it that way (instead of, say,
+`CurrentWeatherModel`) keeps it accurate if the app later shows a forecast for a time other
+than now.
+
+**Context.** The original `App.tsx` ran geocoding and forecast as two chained `useEffect`s,
+each with its own request, state, and error handling, entirely inside the component. A
+minimum city-name length (2 characters) was added so typing a single character doesn't
+trigger a search; debounce and request cancellation are known gaps, tracked in the first
+entry of this log, not fixed here.
+
+**Consequences.** `getForecastUseCase` is the only place that knows fetching weather takes
+two calls; `WeatherPage.tsx` calls one function and reads one result. Infrastructure models
+(`GeocodingDataModel`, `ForecastDataModel`) stay plain interfaces with a free `toDomain`
+function, matching Pokémon; see `docs/module-structure.md` for why a class-based
+`DataModel<T>` contract is planned but not yet worth its cost here.
+
+**Lesson.** A combined type earns an "extends" relationship when it really is the base
+concept plus more, and a name change when the base concept doesn't cover what changed. Both
+questions have real answers per case — neither was a coin flip here.
