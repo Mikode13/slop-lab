@@ -1,36 +1,6 @@
-import axios from 'axios';
 import { useEffect, useState } from 'react';
-
-// API endpoint
-const POKEAPI_URL = 'https://pokeapi.co/api/v2/pokemon';
-
-// The shape of the list response
-interface PokemonListResponse {
-	count: number;
-	next: string;
-	previous: string;
-	results: {
-		name: string;
-		url: string;
-	}[];
-}
-
-// The shape of the detail response
-interface PokemonDetailResponse {
-	id: number;
-	name: string;
-	height: number;
-	weight: number;
-	sprites: {
-		front_default: string;
-	};
-	types: {
-		slot: number;
-		type: {
-			name: string;
-		};
-	}[];
-}
+import type { PokemonDetailModel } from '../domain/detailModel.js';
+import { getAllPokemonDetailsUseCase } from '../application/useCases/getAllPokemonDetailsUseCase.js';
 
 // Colors for every Pokémon type
 const TYPE_COLORS: Record<string, string> = {
@@ -55,7 +25,7 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export default function PokemonBrowser() {
-	const [pokemon, setPokemon] = useState<PokemonDetailResponse[]>([]);
+	const [pokemons, setPokemons] = useState<PokemonDetailModel[]>([]);
 	const [offset, setOffset] = useState(0);
 	const [total, setTotal] = useState(0);
 	const [loading, setLoading] = useState(false);
@@ -66,16 +36,9 @@ export default function PokemonBrowser() {
 		const load = async () => {
 			setLoading(true);
 			try {
-				const list = await axios.get<PokemonListResponse>(
-					`${POKEAPI_URL}?limit=20&offset=${String(offset)}`,
-				);
-				setTotal(list.data.count);
-
-				const details = await Promise.all(
-					list.data.results.map(result => axios.get<PokemonDetailResponse>(result.url)),
-				);
-
-				setPokemon(details.map(detail => detail.data));
+				const list = await getAllPokemonDetailsUseCase(offset, 20);
+				setTotal(list.count);
+				setPokemons(list.results);
 			} catch (error) {
 				console.log('Something went wrong', error);
 			}
@@ -85,7 +48,7 @@ export default function PokemonBrowser() {
 		void load();
 	}, [offset]);
 
-	const visible = pokemon.filter(p => p.name.includes(filter.toLowerCase()));
+	const visible = pokemons.filter(p => p.name.includes(filter.toLowerCase()));
 
 	return (
 		<div
@@ -160,7 +123,7 @@ export default function PokemonBrowser() {
 							textAlign: 'center',
 						}}
 					>
-						<img src={p.sprites.front_default} alt={p.name} width={96} height={96} />
+						<img src={p.sprite} alt={p.name} width={96} height={96} />
 						<p style={{ margin: '8px 0 4px', textTransform: 'capitalize', fontWeight: 600 }}>
 							#{p.id} {p.name}
 						</p>
@@ -169,14 +132,14 @@ export default function PokemonBrowser() {
 								<span
 									key={t.slot}
 									style={{
-										background: TYPE_COLORS[t.type.name],
+										background: TYPE_COLORS[t.typeName],
 										color: '#fff',
 										borderRadius: '4px',
 										padding: '2px 8px',
 										fontSize: '12px',
 									}}
 								>
-									{t.type.name}
+									{t.typeName}
 								</span>
 							))}
 						</div>

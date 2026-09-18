@@ -220,3 +220,35 @@ owners. Promotion must carry these rules, not the ones the first pilot entry des
 **Lesson.** A review gate earns trust when it reads like a colleague's review: severity by
 harm, comments where the code is, and a memory of what it already said. Asking whether a
 named problem still exists is more reliable than hoping the model finds it again.
+
+## Give the Pokémon feature domain, application, infrastructure, and UI folders
+
+**Decision.** `src/pokemon/` is split into `domain/`, `application/` (a `pokemonRepository`
+port plus its `useCases/`), `infrastructure/` (the PokéAPI adapter and its response-to-domain
+mappers), and `ui/`. The composition root and a dependency-injection library stay out of this
+pull request; each use case still constructs its own `PokemonRepositoryImpl` directly, and
+that construction moves only once the composition root lands.
+
+**Context.** The infrastructure layer's mapping used classes with a `toDomain()` method
+(`PokemonDetailResponseImpl`, `PokemonListResponse`) that axios was expected to construct from
+the raw HTTP response. Axios never does that: `axios.get<T>()` is a compile-time type
+assertion, so `response.data` stayed a plain object and every call to `.toDomain()` threw at
+runtime. A second, independent bug called `.transform()` on a plain array. Both bugs passed
+`pnpm run typecheck` right up until the array one was exercised, because the class-based
+shape looked correct to the type checker. The Pokémon tab was fully broken behind a silent
+`catch`. Two use cases created while exploring this design (`getPokemonsUseCase`,
+`getPokemonDetailUseCase`) were never called by the UI and were removed rather than kept for
+a listing-without-detail view that is not planned.
+
+**Consequences.** `toDomain()` is now a plain function (`pokemonDetailToDomain`,
+`pokemonListItemToDomain`) applied explicitly to the parsed response inside the repository,
+with no class standing in for data that was never instantiated. `PokemonRepository` moved
+from being colocated with the domain model to `application/`, matching the port ownership the
+architecture document already specified. Unit tests cover both mapper functions and the
+`getAllPokemonDetailsUseCase` orchestration with a faked repository, per the testing standard.
+Response-shape validation remains absent by design, as `docs/decisions.md`'s first entry
+already scopes that to its own pull request.
+
+**Lesson.** A `toDomain()` method only does something if a real instance calls it. Typing an
+HTTP client's response as a class is not the same as constructing that class, and nothing in
+the type system catches the difference — only running the code does.
