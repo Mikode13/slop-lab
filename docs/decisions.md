@@ -223,11 +223,14 @@ named problem still exists is more reliable than hoping the model finds it again
 
 ## Give the Pokémon feature domain, application, infrastructure, and UI folders
 
-**Decision.** `src/pokemon/` is split into `domain/`, `application/` (a `pokemonRepository`
-port plus its `useCases/`), `infrastructure/` (the PokéAPI adapter and its response-to-domain
-mappers), and `ui/`. The composition root and a dependency-injection library stay out of this
-pull request; each use case still constructs its own `PokemonRepositoryImpl` directly, and
-that construction moves only once the composition root lands.
+**Decision.** `src/pokemon/` is split into `domain/` (`models/` plus the `pokemonRepository`
+port under `interfaces/`), `application/useCases/`, `infrastructure/` (`models/` for the
+PokéAPI response shapes and mappers, `repository/` for the adapter), and `ui/`. Each layer's
+subfolder groups files by artifact kind so a module with several models, ports, or adapters
+does not collapse into one flat directory. The composition root and a dependency-injection
+library stay out of this pull request; the use case still constructs its own
+`PokemonRepositoryImpl` directly, and that construction moves only once the composition root
+lands.
 
 **Context.** The infrastructure layer's mapping used classes with a `toDomain()` method
 (`PokemonDetailResponseImpl`, `PokemonListResponse`) that axios was expected to construct from
@@ -242,9 +245,9 @@ a listing-without-detail view that is not planned.
 
 **Consequences.** `toDomain()` is now a plain function (`pokemonDetailToDomain`,
 `pokemonListItemToDomain`) applied explicitly to the parsed response inside the repository,
-with no class standing in for data that was never instantiated. `PokemonRepository` moved
-from being colocated with the domain model to `application/`, matching the port ownership the
-architecture document already specified. Unit tests cover both mapper functions and the
+with no class standing in for data that was never instantiated. `PokemonRepository` lives
+under `domain/interfaces/`, not `application/`; see "Move project-owned ports from
+application to domain" below for why. Unit tests cover both mapper functions and the
 `getAllPokemonDetailsUseCase` orchestration with a faked repository, per the testing standard.
 Response-shape validation remains absent by design, as `docs/decisions.md`'s first entry
 already scopes that to its own pull request.
@@ -252,3 +255,30 @@ already scopes that to its own pull request.
 **Lesson.** A `toDomain()` method only does something if a real instance calls it. Typing an
 HTTP client's response as a class is not the same as constructing that class, and nothing in
 the type system catches the difference — only running the code does.
+
+## Move project-owned ports from application to domain
+
+**Decision.** Amends "Evolve towards domain, application, infrastructure, and UI boundaries":
+project-owned ports (such as `PokemonRepository`) belong to domain, not application.
+`docs/architecture.md` is updated to match — infrastructure implements ports domain defines;
+application coordinates domain concepts through them but no longer owns them.
+
+**Context.** Each feature under `src/` is meant to work as an independent module that other
+features could eventually depend on. Application already depends directly on infrastructure
+implementations inside a feature — the composition root that would remove that dependency is
+deliberately deferred — which makes application the least stable part of a feature, not the
+part another feature should couple to. A port owned by application would also mean one
+feature's domain could only reach a sibling feature's capability by importing that sibling's
+application layer: application is supposed to depend on domain, so a peer feature depending
+on it instead reverses the intended direction between modules, not just within one.
+
+**Consequences.** `docs/architecture.md`'s diagram and bullets now say infrastructure
+implements ports owned by domain. Application keeps its own boundary — it still owns use
+cases and is still what UI calls — this only narrows what it owns. No pull request yet
+exercises a real cross-feature dependency, so this is a preventive alignment rather than a
+fix for an observed break; the Pokémon feature ("Give the Pokémon feature domain,
+application, infrastructure, and UI folders") is the first to apply it.
+
+**Lesson.** The boundary other modules are meant to depend on should itself depend on as
+little as possible. A layer that is already allowed to reach into concrete infrastructure
+disqualifies itself from being that boundary, whatever else recommends it.

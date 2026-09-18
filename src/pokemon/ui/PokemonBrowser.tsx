@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { PokemonDetailModel } from '../domain/detailModel.js';
+import type { PokemonDetailModel } from '../domain/models/detailModel.js';
 import { getAllPokemonDetailsUseCase } from '../application/useCases/getAllPokemonDetailsUseCase.js';
 
 // Colors for every Pokémon type

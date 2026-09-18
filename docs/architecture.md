@@ -79,25 +79,31 @@ flowchart LR
     Composition --> Infrastructure[Infrastructure]
     UI --> Application
     Application --> Domain[Domain]
-    Infrastructure -. implements ports owned by .-> Application
+    Infrastructure -. implements ports owned by .-> Domain
     Infrastructure --> Domain
 ```
 
-- **Domain** will own business concepts and pure rules without React, Axios, or provider
-  response types.
-- **Application** will own the weather and Pokémon use cases and the ports they require.
-  It will be the boundary through which UI obtains domain results.
+- **Domain** will own business concepts, pure rules, and the ports through which the
+  feature reaches infrastructure, without React, Axios, or provider response types. The
+  ports live here, not in application, because domain is the stable boundary a feature
+  exposes: other features that eventually depend on it should point at domain, not at
+  application, which is already allowed to depend on concrete infrastructure.
+- **Application** will own the weather and Pokémon use cases. It will be the boundary
+  through which UI obtains domain results, coordinating domain concepts through the ports
+  domain defines.
 - **Infrastructure** will contain HTTP adapters, provider-specific response validation, and
-  mapping into project-owned domain values. It will implement application-owned ports.
+  mapping into project-owned domain values. It will implement domain-owned ports.
 - **UI** will contain React rendering and interaction state. It will invoke application use
   cases rather than HTTP clients.
 - A small **composition root** will construct the infrastructure adapters and provide them
   to the application use cases used by the UI.
 
-Dependency direction is inward: UI and infrastructure may depend on application contracts,
-and application may depend on domain concepts. Domain does not depend on React, Axios, or
-infrastructure. UI and domain communicate through application use cases rather than by
-depending directly on one another.
+Dependency direction is inward: UI depends on application contracts, and application and
+infrastructure both depend on domain concepts, including the ports domain defines for
+external data access. Infrastructure implements those ports; it does not depend on
+application. Domain does not depend on React, Axios, infrastructure, or application. UI and
+domain communicate through application use cases rather than by depending directly on one
+another.
 
 This structure is a direction for the teaching sequence, not the current implementation.
 Until a focused pull request introduces a boundary, reviewers should report the existing

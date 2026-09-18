@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pokemonDetailToDomain } from '../../../../src/pokemon/infrastructure/detailResponseModel.js';
-import { PokemonDetailModel } from '../../../../src/pokemon/domain/detailModel.js';
+import { pokemonDetailToDomain } from '../../../../../src/pokemon/infrastructure/models/detailResponseModel.js';
+import { PokemonDetailModel } from '../../../../../src/pokemon/domain/models/detailModel.js';
 
 describe('pokemonDetailToDomain', () => {
 	it('maps a PokéAPI detail response into the domain model', () => {

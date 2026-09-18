@@ -1,7 +1,7 @@
-import type { PokemonDetailModel } from '../../domain/detailModel.js';
-import type { Paginated } from '../../domain/paginated.js';
-import type { PokemonRepository } from '../pokemonRepository.js';
-import { PokemonRepositoryImpl } from '../../infrastructure/pokemonRepositoryImpl.js';
+import type { PokemonDetailModel } from '../../domain/models/detailModel.js';
+import type { Paginated } from '../../domain/models/paginated.js';
+import type { PokemonRepository } from '../../domain/interfaces/pokemonRepository.js';
+import { PokemonRepositoryImpl } from '../../infrastructure/repository/pokemonRepositoryImpl.js';
 
 export async function getAllPokemonDetailsUseCase(
 	offset: number,

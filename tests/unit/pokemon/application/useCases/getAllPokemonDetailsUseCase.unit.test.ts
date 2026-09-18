@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PokemonDetailModel } from '../../../../src/pokemon/domain/detailModel.js';
-import { PokemonDto } from '../../../../src/pokemon/domain/pokemonDtoModel.js';
+import { PokemonDetailModel } from '../../../../../src/pokemon/domain/models/detailModel.js';
+import { PokemonDto } from '../../../../../src/pokemon/domain/models/pokemonDtoModel.js';
 
 const getAll = vi.fn();
 const getDetail = vi.fn();
 
-vi.mock('../../../../src/pokemon/infrastructure/pokemonRepositoryImpl.js', () => ({
+vi.mock('../../../../../src/pokemon/infrastructure/repository/pokemonRepositoryImpl.js', () => ({
 	PokemonRepositoryImpl: class {
 		getAll = getAll;
 		getDetail = getDetail;
@@ -13,7 +13,7 @@ vi.mock('../../../../src/pokemon/infrastructure/pokemonRepositoryImpl.js', () =>
 }));
 
 const { getAllPokemonDetailsUseCase } =
-	await import('../../../../src/pokemon/application/useCases/getAllPokemonDetailsUseCase.js');
+	await import('../../../../../src/pokemon/application/useCases/getAllPokemonDetailsUseCase.js');
 
 describe('getAllPokemonDetailsUseCase', () => {
 	it('fetches the page and resolves every listed Pokémon to its detail', async () => {
