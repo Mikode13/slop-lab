@@ -333,3 +333,31 @@ function, matching Pokémon; see `docs/module-structure.md` for why a class-base
 **Lesson.** A combined type earns an "extends" relationship when it really is the base
 concept plus more, and a name change when the base concept doesn't cover what changed. Both
 questions have real answers per case — neither was a coin flip here.
+
+## Let application construct infrastructure directly until the composition root lands
+
+**Decision.** `getAllPokemonDetailsUseCase` and `getForecastUseCase` each construct their own
+concrete repository inline (`new PokemonApiRepository()`, `new ForecastApiRepository()`)
+rather than receiving one. This is a known violation of the dependency direction
+`docs/architecture.md`'s intended evolution describes — application is meant to depend on the
+ports domain defines, not reach into a specific infrastructure implementation — accepted as
+temporary rather than fixed now.
+
+**Context.** Removing it properly needs something to do the constructing instead: a
+composition root, almost certainly backed by a DI library (`inversify`, matching
+vivolt.front). That is a bigger, cross-cutting change in its own right and is out of scope
+for the two pull requests that introduced these use cases. Leaving the inline construction in
+place kept each of those pull requests to the one problem it was demonstrating, at the cost of
+landing with a boundary the architecture document already says shouldn't exist.
+
+**Consequences.** Tracked as [issue #18](https://github.com/Mikode13/slop-lab/issues/18) for
+both features together, since it's one fix applied twice, not two separate ones. Nothing in
+the repository currently catches this kind of violation automatically — enforcing the layer
+boundary with a lint rule (e.g. import restrictions between `application/` and
+`infrastructure/`) is a real option, but a separate decision from introducing the composition
+root itself, and is not proposed here.
+
+**Lesson.** A documented target architecture and the code can disagree in a way `pnpm run
+check` won't catch, because nothing but a reader (or a lint rule nobody has written yet)
+currently checks a layer only imports what it's allowed to. Writing that gap down keeps it
+visible until something fixes or enforces it.
