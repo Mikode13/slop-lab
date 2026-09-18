@@ -1,4 +1,4 @@
-import { PokemonDto } from '../../domain/models/pokemonDtoModel.js';
+import { PokemonDto } from '../../domain/model/pokemonDtoModel.js';
 
 export interface PokemonListItemResponseDto {
 	name: string;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pokemonListItemToDomain } from '../../../../../src/pokemon/infrastructure/models/paginatedResponseModel.js';
-import { PokemonDto } from '../../../../../src/pokemon/domain/models/pokemonDtoModel.js';
+import { pokemonListItemToDomain } from '../../../../../src/pokemon/infrastructure/model/paginatedResponseModel.js';
+import { PokemonDto } from '../../../../../src/pokemon/domain/model/pokemonDtoModel.js';
 
 describe('pokemonListItemToDomain', () => {
 	it('maps a PokéAPI list item into the domain DTO', () => {

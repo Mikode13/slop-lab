@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { PokemonDetailModel } from '../domain/models/detailModel.js';
-import { getAllPokemonDetailsUseCase } from '../application/useCases/getAllPokemonDetailsUseCase.js';
+import type { PokemonDetailModel } from '../domain/model/detailModel.js';
+import { getAllPokemonDetailsUseCase } from '../application/useCase/getAllPokemonDetailsUseCase.js';
 
 // Colors for every Pokémon type
 const TYPE_COLORS: Record<string, string> = {
@@ -40,7 +40,7 @@ export default function PokemonBrowser() {
 				setTotal(list.count);
 				setPokemons(list.results);
 			} catch (error) {
-				console.log('Something went wrong', error);
+				console.error('Something went wrong', error);
 			}
 			setLoading(false);
 		};
