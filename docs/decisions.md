@@ -435,3 +435,68 @@ that way.
 **Lesson.** A type-check configuration should model the resolution that actually runs the
 code. Inheriting a stricter model made every import in `src/` pay for a runtime that does not
 exist here.
+
+## Build infrastructure data models with class-transformer
+
+**Decision.** Every infrastructure data model is a class that implements `DataModel<T>`
+(`toDomain(): T`, in `src/common/domain/dataModel.ts`), declares its fields with
+`@Expose` and `@Type`, and is built by `fromJson(Model, json)`
+(`src/common/infrastructure/fromJson.ts`), a thin wrapper over `plainToInstance` with
+`excludeExtraneousValues`. The contract is domain-side because it names no library; the
+wrapper and the decorated models are infrastructure because they depend on `class-transformer`.
+The models use its decorators and the wrapper only owns the construction call, so replacing
+the library touches every data model, not one file. Repositories call
+`fromJson(...).toDomain()`. This replaces both shapes the two features used: Pokémon's plain
+interfaces with free `toDomain` functions, and Weather's classes with an unused constructor
+and a duplicate `IXDataModel` interface. The domain models keep their own constructors.
+
+**Context.** Amends "Give the Weather feature domain, application, infrastructure, and UI
+folders", which recorded Weather's classes as an interim shape, and the Pokémon entry's
+free-function mappers ([issue #19](https://github.com/Mikode13/slop-lab/issues/19)). The
+mappers existed because a class typed onto an axios response is never instantiated, so its
+`toDomain()` threw. `plainToInstance` is what actually constructs the instance, which makes
+the method safe again while removing the `this.x = x` constructors and their duplicate
+parameter interfaces. A spike first checked that decorators compile under tsc, Vitest, and
+the Vite build.
+
+**Consequences.** Both tsconfigs set `experimentalDecorators`, because `class-transformer`
+uses the legacy decorator signature that TypeScript's standard decorators do not provide.
+`reflect-metadata` becomes a dependency, imported once in `main.tsx` and in
+`tests/setup.ts`: `@Type` calls `Reflect.getMetadata`, and without it every model fails at
+load. Model tests now start from raw JSON and go through `fromJson`, so they cover the
+decorators and the dropping of undeclared fields, not only the mapping. Both features were
+also run against the real PokéAPI and Open-Meteo. Fields are still unvalidated at runtime:
+a wrong type from the provider passes through unchanged, which
+[issue #20](https://github.com/Mikode13/slop-lab/issues/20) covers.
+
+**Lesson.** The earlier bug and its fix were the same fact seen from two sides: a method on
+a data model works only if something constructs the instance. Putting that construction in
+one named function (`fromJson`) makes it a single place to get right instead of a habit every
+repository has to remember.
+
+## Type domain constructors with ConstructorType instead of a duplicate interface
+
+**Decision.** Domain model constructors take `ConstructorType<TheClass>`, defined in
+`src/common/domain/constructorType.ts` as the class's own members with every function member
+removed: methods, function-typed properties, and optional or nullable ones. The
+`IForecastModel`/`IGeocodingModel` interfaces and the inline `{ id: number; ... }` parameter
+types on the Pokémon and Weather models are gone. The assignments in each constructor stay.
+
+**Context.** Each domain class listed its fields twice, once as members and once as the
+constructor parameter type, so adding a field meant editing both and TypeScript only noticed
+when they drifted. vivolt.front solves this with the same helper, but its version filters on
+`T[K] extends Function`, which lets optional and nullable functions through as required
+constructor data. The variant here uses `NonNullable<T[K]>` and `-?` to close that hole while
+keeping optional data fields optional.
+
+**Consequences.** Getters remain a gap: to the type system they are ordinary fields, so a
+model with a getter has to omit it explicitly or turn it into a method. Neither feature has
+one today. `LocatedForecastModel` keeps taking a base forecast plus a `Pick` of its own
+fields, because spreading a class instance into the parameter loses its prototype and the
+lint rule against it is right in general. The type is covered by a type-level test that
+`tsc` checks under `tests/`. Infrastructure models are unaffected: they declare their fields
+with decorators and take no constructor arguments.
+
+**Lesson.** A helper copied from a reference project should be tested against the cases the
+reference never hit. The original passed for every model vivolt.front had and would have
+passed for ours too, yet it failed for a class with an optional callback.

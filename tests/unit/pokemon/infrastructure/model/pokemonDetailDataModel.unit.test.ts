@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { pokemonDetailToDomain } from '@/pokemon/infrastructure/model/pokemonDetailDataModel';
+import { fromJson } from '@/common/infrastructure/fromJson';
 import { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
+import { PokemonDetailDataModel } from '@/pokemon/infrastructure/model/pokemonDetailDataModel';
 
-describe('pokemonDetailToDomain', () => {
-	it('maps a PokéAPI detail response into the domain model', () => {
-		const domain = pokemonDetailToDomain({
+describe('PokemonDetailDataModel', () => {
+	it('builds a real instance from a PokéAPI detail response and maps it to the domain', () => {
+		const data = fromJson(PokemonDetailDataModel, {
 			id: 1,
 			name: 'bulbasaur',
 			height: 7,
@@ -16,8 +17,8 @@ describe('pokemonDetailToDomain', () => {
 			],
 		});
 
-		expect(domain).toBeInstanceOf(PokemonDetailModel);
-		expect(domain).toEqual(
+		expect(data).toBeInstanceOf(PokemonDetailDataModel);
+		expect(data.toDomain()).toEqual(
 			new PokemonDetailModel({
 				id: 1,
 				name: 'bulbasaur',
@@ -33,7 +34,7 @@ describe('pokemonDetailToDomain', () => {
 	});
 
 	it('maps a single-type Pokémon without leaving the second slot behind', () => {
-		const domain = pokemonDetailToDomain({
+		const data = fromJson(PokemonDetailDataModel, {
 			id: 4,
 			name: 'charmander',
 			height: 6,
@@ -42,6 +43,6 @@ describe('pokemonDetailToDomain', () => {
 			types: [{ slot: 1, type: { name: 'fire' } }],
 		});
 
-		expect(domain.types).toEqual([{ slot: 1, typeName: 'fire' }]);
+		expect(data.toDomain().types).toEqual([{ slot: 1, typeName: 'fire' }]);
 	});
 });

@@ -1,19 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { toDomain } from '@/weather/infrastructure/model/geocodingDataModel';
+import { fromJson } from '@/common/infrastructure/fromJson';
 import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
+import { GeocodingDataModel } from '@/weather/infrastructure/model/geocodingDataModel';
 
-describe('geocodingDataModel toDomain', () => {
-	it('maps an Open-Meteo geocoding result into the domain model', () => {
-		const domain = toDomain({
+describe('GeocodingDataModel', () => {
+	it('builds a real instance from an Open-Meteo geocoding result and maps it to the domain', () => {
+		const data = fromJson(GeocodingDataModel, {
 			id: 3117735,
 			name: 'Madrid',
 			country: 'Spain',
 			latitude: 40.4165,
 			longitude: -3.70256,
+			timezone: 'Europe/Madrid',
 		});
 
-		expect(domain).toBeInstanceOf(GeocodingModel);
-		expect(domain).toEqual(
+		expect(data).toBeInstanceOf(GeocodingDataModel);
+		expect(data).not.toHaveProperty('timezone');
+		expect(data.toDomain()).toEqual(
 			new GeocodingModel({
 				id: 3117735,
 				name: 'Madrid',

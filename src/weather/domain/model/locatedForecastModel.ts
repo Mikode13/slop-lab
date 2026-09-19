@@ -1,4 +1,4 @@
-import { ForecastModel } from './forecastModel';
+import { ForecastModel } from '@/weather/domain/model/forecastModel';
 
 export class LocatedForecastModel extends ForecastModel {
 	location: string;
@@ -8,17 +8,12 @@ export class LocatedForecastModel extends ForecastModel {
 
 	constructor(
 		forecast: ForecastModel,
-		{
-			location,
-			country,
-			latitude,
-			longitude,
-		}: { location: string; country: string; latitude: number; longitude: number },
+		place: Pick<LocatedForecastModel, 'location' | 'country' | 'latitude' | 'longitude'>,
 	) {
 		super(forecast);
-		this.location = location;
-		this.country = country;
-		this.latitude = latitude;
-		this.longitude = longitude;
+		this.location = place.location;
+		this.country = place.country;
+		this.latitude = place.latitude;
+		this.longitude = place.longitude;
 	}
 }

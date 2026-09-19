@@ -1,35 +1,21 @@
+import { Expose } from 'class-transformer';
 import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
+import type { DataModel } from '@/common/domain/dataModel';
 
-interface IGeocodingDataModel {
-	id: number;
-	name: string;
-	country: string;
-	latitude: number;
-	longitude: number;
-}
+export class GeocodingDataModel implements DataModel<GeocodingModel> {
+	@Expose() id!: number;
+	@Expose() name!: string;
+	@Expose() country!: string;
+	@Expose() latitude!: number;
+	@Expose() longitude!: number;
 
-export class GeocodingDataModel {
-	id: number;
-	name: string;
-	country: string;
-	latitude: number;
-	longitude: number;
-
-	constructor({ id, name, country, latitude, longitude }: IGeocodingDataModel) {
-		this.id = id;
-		this.name = name;
-		this.country = country;
-		this.latitude = latitude;
-		this.longitude = longitude;
+	toDomain(): GeocodingModel {
+		return new GeocodingModel({
+			id: this.id,
+			name: this.name,
+			country: this.country,
+			latitude: this.latitude,
+			longitude: this.longitude,
+		});
 	}
-}
-
-export function toDomain({
-	id,
-	name,
-	country,
-	latitude,
-	longitude,
-}: IGeocodingDataModel): GeocodingModel {
-	return new GeocodingModel({ id, name, country, latitude, longitude });
 }

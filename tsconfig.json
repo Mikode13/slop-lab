@@ -2,6 +2,7 @@
 	"extends": "@mikode13/tsconfig/react",
 	"compilerOptions": {
 		"types": ["vite/client"],
+		"experimentalDecorators": true,
 		"paths": { "@/*": ["./src/*"] }
 	},
 	"include": ["src", "vitest.config.ts"]

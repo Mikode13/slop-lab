@@ -1,17 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { pokemonListItemToDomain } from '@/pokemon/infrastructure/model/pokemonDataModel';
+import { fromJson } from '@/common/infrastructure/fromJson';
 import { PokemonModel } from '@/pokemon/domain/model/pokemonModel';
+import { PokemonDataModel } from '@/pokemon/infrastructure/model/pokemonDataModel';
 
-describe('pokemonListItemToDomain', () => {
-	it('maps a PokéAPI list item into the domain model', () => {
-		const domain = pokemonListItemToDomain({
+describe('PokemonDataModel', () => {
+	it('builds a real instance from a PokéAPI list item and maps it to the domain', () => {
+		const data = fromJson(PokemonDataModel, {
 			name: 'bulbasaur',
 			url: 'https://pokeapi.co/api/v2/pokemon/1/',
 		});
 
-		expect(domain).toBeInstanceOf(PokemonModel);
-		expect(domain).toEqual(
+		expect(data).toBeInstanceOf(PokemonDataModel);
+		expect(data.toDomain()).toEqual(
 			new PokemonModel({ name: 'bulbasaur', url: 'https://pokeapi.co/api/v2/pokemon/1/' }),
 		);
+	});
+
+	it('drops fields the model does not declare', () => {
+		const data = fromJson(PokemonDataModel, { name: 'bulbasaur', url: 'u', extra: 1 });
+
+		expect(data).not.toHaveProperty('extra');
 	});
 });
