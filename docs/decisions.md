@@ -220,3 +220,191 @@ owners. Promotion must carry these rules, not the ones the first pilot entry des
 **Lesson.** A review gate earns trust when it reads like a colleague's review: severity by
 harm, comments where the code is, and a memory of what it already said. Asking whether a
 named problem still exists is more reliable than hoping the model finds it again.
+
+## Give the Pokémon feature domain, application, infrastructure, and UI folders
+
+**Decision.** `src/pokemon/` is split into `domain/` (`model/` plus the `pokemonRepository`
+port under `repository/`), `application/` (`getAllPokemonDetailsUseCase.ts` directly — no
+`useCase/` subfolder, since application holds only use cases and a folder that separates one
+kind of artifact from nothing else earns its keep only once a second kind exists),
+`infrastructure/` (`model/` for the PokéAPI response shapes and mappers, `repository/` for
+the adapter), and `ui/`. Each layer's subfolder groups files by artifact kind so a module
+with several models, ports, or adapters does not collapse into one flat directory; a port's
+folder is named for what kind of contract it is (`repository/` here) rather than a generic
+`interfaces/`, since a domain can define other kinds of ports later that aren't
+repository-shaped. The composition root and a dependency-injection library stay out of this
+pull request; the use case still constructs its own `PokemonApiRepository` directly, and
+that construction moves only once the composition root lands (tracked as
+[issue #18](https://github.com/Mikode13/slop-lab/issues/18); see "Let application construct
+infrastructure directly until the composition root lands" below).
+
+**Context.** On `main`, `src/PokemonBrowser.tsx` is one component that calls PokéAPI directly
+through axios, types both responses as plain interfaces, and renders straight from
+`response.data` — no domain, application, or infrastructure separation exists yet. Splitting
+it into layers meant deciding how the new infrastructure layer would map a raw response into
+a domain model. An early version of that mapping, written and caught while building this same
+pull request — so it never reached `main` and isn't visible by comparing this change to its
+base — used classes with a `toDomain()` method (`PokemonDetailResponseImpl`,
+`PokemonListResponse`) that axios was expected to construct from the raw HTTP response. Axios
+never does that: `axios.get<T>()` is a compile-time type assertion, so `response.data` would
+have stayed a plain object and every call to `.toDomain()` would have thrown at runtime. A
+second, independent mistake called `.transform()` on a plain array. Both would have passed
+`pnpm run typecheck` right up until the array one was exercised, because the class-based shape
+looked correct to the type checker; neither shipped. Two use cases created while exploring
+this design (`getPokemonsUseCase`, `getPokemonDetailUseCase`) were similarly never wired to
+the UI and were dropped before merge rather than kept for a listing-without-detail view that
+isn't planned. Separately, the list-entry domain model was first named `PokemonDto` —
+transport vocabulary that doesn't belong in the domain layer, and inconsistent with the
+`<Thing>Model` shape every other domain file in this module uses — and was renamed to
+`PokemonModel` before merge for the same reason.
+
+**Consequences.** `toDomain()` is a plain function (`pokemonDetailToDomain`,
+`pokemonListItemToDomain`) applied explicitly to the parsed response inside the repository,
+with no class standing in for data no code instantiates. `PokemonRepository` lives under
+`domain/repository/`, not `application/`; see "Move project-owned ports from application to
+domain" below for why. The list-entry domain model is `PokemonModel`, matching
+`PokemonDetailModel`'s naming. Unit tests cover both mapper functions and the
+`getAllPokemonDetailsUseCase` orchestration with a faked repository, per the testing standard.
+Response-shape validation remains absent by design, as `docs/decisions.md`'s first entry
+already scopes that to its own pull request.
+
+**Lesson.** A `toDomain()` method only does something if a real instance calls it — typing an
+HTTP client's response as a class is not the same as constructing that class, and nothing in
+the type system catches the difference. This mistake was caught before merge, which is also
+why it leaves no trace for anyone diffing this change against `main`: writing it down here is
+the only record that it happened at all.
+
+## Move project-owned ports from application to domain
+
+**Decision.** Amends "Evolve towards domain, application, infrastructure, and UI boundaries":
+project-owned ports (such as `PokemonRepository`) belong to domain, not application.
+`docs/architecture.md` is updated to match — infrastructure implements ports domain defines;
+application coordinates domain concepts through them but no longer owns them.
+
+**Context.** Each feature under `src/` is meant to work as an independent module that other
+features could eventually depend on. Application already depends directly on infrastructure
+implementations inside a feature — the composition root that would remove that dependency is
+deliberately deferred — which makes application the least stable part of a feature, not the
+part another feature should couple to. A port owned by application would also mean one
+feature's domain could only reach a sibling feature's capability by importing that sibling's
+application layer: application is supposed to depend on domain, so a peer feature depending
+on it instead reverses the intended direction between modules, not just within one.
+
+**Consequences.** `docs/architecture.md`'s diagram and bullets now say infrastructure
+implements ports owned by domain. Application keeps its own boundary — it still owns use
+cases and is still what UI calls — this only narrows what it owns. No pull request yet
+exercises a real cross-feature dependency, so this is a preventive alignment rather than a
+fix for an observed break; the Pokémon feature ("Give the Pokémon feature domain,
+application, infrastructure, and UI folders") is the first to apply it.
+
+**Lesson.** The boundary other modules are meant to depend on should itself depend on as
+little as possible. A layer that is already allowed to reach into concrete infrastructure
+disqualifies itself from being that boundary, whatever else recommends it.
+
+## Name every layer subfolder in the singular
+
+**Decision.** Layer subfolders are always singular — `model/`, `repository/` — regardless of
+how many files end up inside.
+
+**Context.** While building this pull request, `src/pokemon/`'s subfolders were initially
+plural because English pluralizes a folder holding several files of one kind. That reads
+fine until a folder happens to hold exactly one file, at which point "models/" for one file
+looks like a naming mistake, and nothing about the folder's role explains why. Counting files
+to decide the name creates a question — is one enough to justify the plural? — that has no
+principled answer and would recur every time a new feature's layer starts small. The folders
+were renamed to singular before merge, so `main` never saw the plural form; only this
+decision and the final singular layout are visible in history.
+
+**Consequences.** The folder name states what kind of thing lives there, not how many
+happen to right now. `docs/module-structure.md`'s example and every naming rule that
+referenced a plural folder are updated to match.
+
+**Lesson.** A naming rule that depends on counting the files it names isn't a rule, it's a
+question you'll answer differently every time. Name the category, not the count.
+
+## Give the Weather feature domain, application, infrastructure, and UI folders
+
+**Decision.** `src/weather/` is split the same way as Pokémon: `domain/model/` +
+`domain/repository/` (a single `ForecastRepository` port exposing `getCoordinates` and
+`getForecast` — one port, not two, because nothing in this app needs geocoding without a
+forecast to attach it to), `application/` (`getForecastUseCase`, combining both calls),
+`infrastructure/model/` + `infrastructure/repository/` (`ForecastApiRepository`), and `ui/`.
+`LocatedForecastModel` extends `ForecastModel` rather than repeating its fields, adding only
+`location`, `country`, `latitude`, and `longitude` — it is a forecast with where it's for
+attached, not an unrelated combined shape, and naming it that way (instead of, say,
+`CurrentWeatherModel`) keeps it accurate if the app later shows a forecast for a time other
+than now.
+
+**Context.** The original `App.tsx` ran geocoding and forecast as two chained `useEffect`s,
+each with its own request, state, and error handling, entirely inside the component. A
+minimum city-name length (2 characters) was added so typing a single character doesn't
+trigger a search; debounce and request cancellation are known gaps, tracked in the first
+entry of this log, not fixed here.
+
+**Consequences.** `getForecastUseCase` is the only place that knows fetching weather takes
+two calls; `WeatherPage.tsx` calls one function and reads one result. Infrastructure models
+(`GeocodingDataModel`, `ForecastDataModel`) are classes with a constructor nothing calls and
+a duplicate `IXDataModel`-shaped parameter interface, unlike Pokémon's plain-interface
+pattern — deliberately, because that constructor is the shape `class-transformer` adoption
+([issue #19](https://github.com/Mikode13/slop-lab/issues/19)) will put to use as a real
+`toDomain()` instance method. Until then, mapping goes through the free `toDomain` function
+exactly as Pokémon's does; see `docs/module-structure.md` for why both interim shapes exist
+side by side.
+
+**Lesson.** A combined type earns an "extends" relationship when it really is the base
+concept plus more, and a name change when the base concept doesn't cover what changed. Both
+questions have real answers per case — neither was a coin flip here.
+
+## Let application construct infrastructure directly until the composition root lands
+
+**Decision.** `getAllPokemonDetailsUseCase` and `getForecastUseCase` each construct their own
+concrete repository inline (`new PokemonApiRepository()`, `new ForecastApiRepository()`)
+rather than receiving one. This is a known violation of the dependency direction
+`docs/architecture.md`'s intended evolution describes — application is meant to depend on the
+ports domain defines, not reach into a specific infrastructure implementation — accepted as
+temporary rather than fixed now.
+
+**Context.** Removing it properly needs something to do the constructing instead: a
+composition root, almost certainly backed by a DI library (`inversify`, matching
+vivolt.front). That is a bigger, cross-cutting change in its own right and is out of scope
+for the two pull requests that introduced these use cases. Leaving the inline construction in
+place kept each of those pull requests to the one problem it was demonstrating, at the cost of
+landing with a boundary the architecture document already says shouldn't exist.
+
+**Consequences.** Tracked as [issue #18](https://github.com/Mikode13/slop-lab/issues/18) for
+both features together, since it's one fix applied twice, not two separate ones. Nothing in
+the repository currently catches this kind of violation automatically — enforcing the layer
+boundary with a lint rule (e.g. import restrictions between `application/` and
+`infrastructure/`) is a real option, but a separate decision from introducing the composition
+root itself, and is not proposed here.
+
+**Lesson.** A documented target architecture and the code can disagree in a way `pnpm run
+check` won't catch, because nothing but a reader (or a lint rule nobody has written yet)
+currently checks a layer only imports what it's allowed to. Writing that gap down keeps it
+visible until something fixes or enforces it.
+
+## Close part of the testing-standard deviation this branch's own tests exposed
+
+**Decision.** Amends "Initialize without the testing standard": the `test` and `test:unit`
+scripts, the `tests/unit/` suite, and `.husky/pre-push` running `pnpm run check && pnpm test`
+are no longer deviations — they were introduced while writing this pull request's own unit
+tests for the Pokémon and Weather use cases and mappers. CI's Tests capability is enabled for
+the first time in this change too, so the suite that `pre-push` already ran locally now also
+runs on every pull request and on `main`. `component/`, `integration/`, and `external/`
+remain unopened; the standard is partially adopted, not fully.
+
+**Context.** This pull request needed unit tests for its new use cases and mappers regardless
+of the testing standard's own timeline, and having written them, running them only through a
+hook a push can bypass — or never, on a merge from the web UI — protected nobody but whoever
+remembered to push normally. The AI review on this same pull request caught exactly that gap,
+independent of the pull request's own goal of introducing layered features, and a related one:
+`tests/tsconfig.json` existed but nothing invoked it, so a type error inside a test file
+passed `pnpm run check` unnoticed. `tsc -p tests/tsconfig.json --noEmit` is now chained into
+`pnpm run typecheck`.
+
+**Consequences.** `README.md`'s "current status" section and command table now describe
+`pnpm test` and the Tests capability instead of stating neither exists.
+
+**Lesson.** A deviation recorded as "will close in its own pull request" can close as a side
+effect of unrelated work instead. The record should say so once it happens rather than leave
+the original entry looking still-open when it isn't.

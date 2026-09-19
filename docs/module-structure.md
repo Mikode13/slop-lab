@@ -1,0 +1,99 @@
+# Feature module structure
+
+This shows the concrete folder layout and file-naming pattern for a feature module, worked
+out on the Pokémon feature. It complements [architecture.md](architecture.md), which
+defines the four boundaries (domain, application, infrastructure, UI) conceptually; this
+document is the file-level and naming-level pattern that follows from them. The reasoning
+behind each naming choice lives in [decisions.md](decisions.md) and is not repeated here.
+
+`user` below is a placeholder module, not a real feature — copy the shape, not the name.
+
+```text
+user/
+├── domain/
+│   ├── model/
+│   │   ├── userDetailModel.ts    → UserDetailModel
+│   │   └── userSummaryModel.ts   → UserSummaryModel
+│   └── repository/
+│       └── userRepository.ts     → UserRepository (the port)
+├── application/
+│   ├── getUserUseCase.ts     → getUserUseCase
+│   └── getAllUsersUseCase.ts → getAllUsersUseCase
+├── infrastructure/
+│   ├── model/
+│   │   ├── userDetailDataModel.ts    → UserDetailDataModel
+│   │   └── userSummaryDataModel.ts   → UserSummaryDataModel
+│   └── repository/
+│       └── <provider>Repository.ts   → <Provider>Repository (implements UserRepository)
+└── ui/
+    └── UserPage.tsx   → WIP: components, state, and stores aren't decided yet
+```
+
+Replace `<provider>` / `<Provider>` in the repository file name with the concrete external
+system the adapter talks to — `PokeApi`, `PokemonApi`, `LocalStorage`, `GitHubApi`, whatever
+reads clearly for that feature. Never `Impl`: a generic "this is an implementation" suffix
+stops working the moment a port has a second adapter, because it says nothing about which
+one. The provider name always does. The exact spelling is a per-feature call, not a fixed
+vocabulary — it does not have to match the external product's own brand name or abbreviation,
+it only has to distinguish this adapter from any other adapter of the same port. Infra
+models don't take this qualifier; see the naming rule below for why.
+
+## Naming rules
+
+- **Casing.** Files are named after their primary export, in that export's casing: PascalCase
+  export → PascalCase file (React components only); everything else is camelCase. No
+  snake_case, no kebab-case.
+- **Folder names are always singular** (`model/`, `repository/`, `useCase/`), regardless of
+  how many files end up inside. Counting files to decide singular vs plural just creates a
+  question with no stable answer: a folder with one file today gets a second tomorrow, and
+  nothing about the folder's role changed in between.
+- **Domain is bare.** No qualifier: `UserDetailModel`, `UserRepository`. The folder
+  (`domain/`) already says what it is; the name says only what it is a model or contract
+  of, dropping the feature-name prefix the path already supplies.
+- **Infrastructure repositories are provider-qualified; infrastructure models aren't.** A
+  repository implementation is prefixed with the concrete provider it speaks to
+  (`PokemonApiRepository`, `LocalStorageRepository`, ... all implementing the same port),
+  because that's the one thing that actually varies once a port gets a second adapter, and a
+  generic `Impl` suffix stops distinguishing them the moment it does. An infrastructure model
+  instead mirrors its domain counterpart's name with `Data` inserted before `Model`
+  (`PokemonDetailModel` → `PokemonDetailDataModel`, `ForecastModel` → `ForecastDataModel`): it
+  belongs to whichever single provider its feature's repository already commits to, so
+  restating that provider on every model inside `infrastructure/model/` would only repeat
+  what the folder already says.
+- **Ports live in domain, not `application/`.** A port is the stable contract other features
+  would depend on if they needed this module's capability; application already depends on
+  concrete infrastructure ahead of the composition root, so it is not the stable boundary.
+  See the "Move project-owned ports from application to domain" entry in decisions.md.
+- **Name the port's folder concretely, not `interfaces/`.** `interfaces/` says nothing about
+  what kind of contract is inside, and a domain can define more than one kind: a
+  `repository/` (data access, this document's example) reads differently from, say, a
+  `sender/` port that only exposes `resetPassword`/`confirmEmail` and makes no claim about
+  CRUD or an external API at all. Name each port folder after what it actually is; don't
+  invent a catch-all bucket before a second kind of port exists to justify one.
+- **Shared infra shapes are owned by whoever defines them, not duplicated by resemblance.**
+  If a second adapter (e.g. a `LocalStorage` cache) persists another adapter's shape
+  unchanged, it reuses that adapter's model instead of declaring a lookalike one. Two
+  models that only coincidentally match today, but could change for unrelated reasons,
+  stay separate even though they look identical right now.
+- **Use cases are a verb plus what they do, suffixed `UseCase`:** `getUserUseCase`,
+  `createUserUseCase`, `deleteUserUseCase`.
+- **Subdivide a layer's folder only once it holds more than one kind of artifact.**
+  `application/` holds only use case files today, in both features that exist, so it stays
+  flat — a `useCase/` subfolder would separate use cases from nothing, since there is nothing
+  else in `application/` to separate them from. `domain/` earns its `model/` and `repository/`
+  split because it already holds two kinds of artifact. Don't create a category folder in
+  anticipation of a second kind that doesn't exist yet; add it when application actually
+  gains one.
+- **A shared `DataModel<T>` contract for infrastructure is planned, not yet adopted.** Every
+  infrastructure model would implement `toDomain(): T`, enforced by a common interface
+  (mirrors vivolt.front's own `DataModel<T>`), with the repository constructing the class
+  explicitly (`new XDataModel(raw).toDomain()`) rather than trusting a generic type
+  parameter to have done it. Pokémon's infrastructure models are plain interfaces with a free
+  `toDomain` function today — less to write while the project is this small, and a contained,
+  additive change to switch over once `class-transformer` adoption (see decisions.md) makes
+  the constructor boilerplate this would otherwise add worth removing at the same time.
+  Weather's infrastructure models (`ForecastDataModel`, `GeocodingDataModel`) are the
+  exception: they are already classes, with a constructor nothing calls and a duplicate
+  `IXDataModel`-shaped parameter interface, because that's the shape `class-transformer`
+  adoption will need. Both patterns are interim; `class-transformer` adoption converts every
+  infrastructure model to the same shape, tracked by issue #19.
