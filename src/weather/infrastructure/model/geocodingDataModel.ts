@@ -1,6 +1,6 @@
 import { Expose } from 'class-transformer';
 import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
-import type { DataModel } from '@/common/infrastructure/dataModel';
+import type { DataModel } from '@/common/domain/dataModel';
 
 export class GeocodingDataModel implements DataModel<GeocodingModel> {
 	@Expose() id!: number;

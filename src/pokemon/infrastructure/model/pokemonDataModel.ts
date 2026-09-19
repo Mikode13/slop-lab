@@ -1,6 +1,6 @@
 import { Expose } from 'class-transformer';
 import { PokemonModel } from '@/pokemon/domain/model/pokemonModel';
-import type { DataModel } from '@/common/infrastructure/dataModel';
+import type { DataModel } from '@/common/domain/dataModel';
 
 export class PokemonDataModel implements DataModel<PokemonModel> {
 	@Expose() name!: string;

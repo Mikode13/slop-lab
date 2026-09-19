@@ -1,6 +1,6 @@
 import { Expose, Type } from 'class-transformer';
 import { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
-import type { DataModel } from '@/common/infrastructure/dataModel';
+import type { DataModel } from '@/common/domain/dataModel';
 
 class PokemonSpritesDataModel {
 	@Expose() front_default!: string;

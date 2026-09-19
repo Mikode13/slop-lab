@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fromJson } from '@/common/infrastructure/dataModel';
+import { fromJson } from '@/common/infrastructure/fromJson';
 import { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
 import { PokemonDetailDataModel } from '@/pokemon/infrastructure/model/pokemonDetailDataModel';
 

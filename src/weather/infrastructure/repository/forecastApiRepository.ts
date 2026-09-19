@@ -3,7 +3,7 @@ import type { ForecastModel } from '@/weather/domain/model/forecastModel';
 import type { GeocodingModel } from '@/weather/domain/model/geocodingModel';
 import type { Point } from '@/weather/domain/model/point';
 import type { ForecastRepository } from '@/weather/domain/repository/forecastRepository';
-import { fromJson } from '@/common/infrastructure/dataModel';
+import { fromJson } from '@/common/infrastructure/fromJson';
 import { ForecastDataModel } from '@/weather/infrastructure/model/forecastDataModel';
 import { GeocodingDataModel } from '@/weather/infrastructure/model/geocodingDataModel';
 

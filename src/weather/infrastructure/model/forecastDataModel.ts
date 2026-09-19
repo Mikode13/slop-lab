@@ -1,6 +1,6 @@
 import { Expose } from 'class-transformer';
 import { ForecastModel } from '@/weather/domain/model/forecastModel';
-import type { DataModel } from '@/common/infrastructure/dataModel';
+import type { DataModel } from '@/common/domain/dataModel';
 
 export class ForecastDataModel implements DataModel<ForecastModel> {
 	@Expose() time!: string;

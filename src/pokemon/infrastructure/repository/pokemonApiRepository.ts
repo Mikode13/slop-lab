@@ -3,7 +3,7 @@ import type { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailMod
 import type { PokemonRepository } from '@/pokemon/domain/repository/pokemonRepository';
 import type { Paginated } from '@/pokemon/domain/model/paginated';
 import type { PokemonModel } from '@/pokemon/domain/model/pokemonModel';
-import { fromJson } from '@/common/infrastructure/dataModel';
+import { fromJson } from '@/common/infrastructure/fromJson';
 import { PokemonDataModel } from '@/pokemon/infrastructure/model/pokemonDataModel';
 import { PokemonDetailDataModel } from '@/pokemon/infrastructure/model/pokemonDetailDataModel';
 

@@ -86,7 +86,10 @@ models don't take this qualifier; see the naming rule below for why.
   gains one.
 - **Infrastructure models implement `DataModel<T>` and are built with `fromJson`.** Each one
   is a class whose fields carry `@Expose` (and `@Type` for nested objects) and that
-  implements `toDomain(): T` from `src/common/infrastructure/dataModel.ts`. The repository
+  implements `toDomain(): T` from the `DataModel<T>` contract in
+  `src/common/domain/dataModel.ts`, which belongs to the project's domain because it says
+  nothing about how data is fetched. `fromJson` lives in `src/common/infrastructure/fromJson.ts`
+  because it is the part that depends on `class-transformer`. The repository
   builds it explicitly, `fromJson(XDataModel, response.data).toDomain()`, never by typing an
   HTTP response as the class: `axios.get<T>()` only asserts a type at compile time and never
   constructs an instance. `fromJson` uses `excludeExtraneousValues`, so a field the model

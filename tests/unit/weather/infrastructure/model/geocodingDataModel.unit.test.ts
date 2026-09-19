@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fromJson } from '@/common/infrastructure/dataModel';
+import { fromJson } from '@/common/infrastructure/fromJson';
 import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
 import { GeocodingDataModel } from '@/weather/infrastructure/model/geocodingDataModel';
 

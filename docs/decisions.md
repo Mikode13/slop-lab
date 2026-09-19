@@ -439,9 +439,11 @@ exist here.
 ## Build infrastructure data models with class-transformer
 
 **Decision.** Every infrastructure data model is a class that implements `DataModel<T>`
-(`toDomain(): T`, in `src/common/infrastructure/dataModel.ts`), declares its fields with
-`@Expose` and `@Type`, and is built by `fromJson(Model, json)`, a thin wrapper over
-`plainToInstance` with `excludeExtraneousValues`. Repositories call
+(`toDomain(): T`, in `src/common/domain/dataModel.ts`), declares its fields with
+`@Expose` and `@Type`, and is built by `fromJson(Model, json)`
+(`src/common/infrastructure/fromJson.ts`), a thin wrapper over `plainToInstance` with
+`excludeExtraneousValues`. The contract is domain-side because it names no library; the
+wrapper is infrastructure because it is the only code that depends on `class-transformer`. Repositories call
 `fromJson(...).toDomain()`. This replaces both shapes the two features used: Pokémon's plain
 interfaces with free `toDomain` functions, and Weather's classes with an unused constructor
 and a duplicate `IXDataModel` interface. The domain models keep their own constructors.
