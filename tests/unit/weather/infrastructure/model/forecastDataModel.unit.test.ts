@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { toDomain } from '../../../../../src/weather/infrastructure/model/forecastDataModel.js';
-import { ForecastModel } from '../../../../../src/weather/domain/model/forecastModel.js';
+import { toDomain } from '@/weather/infrastructure/model/forecastDataModel';
+import { ForecastModel } from '@/weather/domain/model/forecastModel';
 
 describe('forecastDataModel toDomain', () => {
 	it('maps an Open-Meteo current-conditions response into the domain model', () => {

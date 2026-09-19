@@ -1,19 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GeocodingModel } from '../../../../src/weather/domain/model/geocodingModel.js';
-import { ForecastModel } from '../../../../src/weather/domain/model/forecastModel.js';
+import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
+import { ForecastModel } from '@/weather/domain/model/forecastModel';
 
 const getCoordinates = vi.fn();
 const getForecast = vi.fn();
 
-vi.mock('../../../../src/weather/infrastructure/repository/forecastApiRepository.js', () => ({
+vi.mock('@/weather/infrastructure/repository/forecastApiRepository', () => ({
 	ForecastApiRepository: class {
 		getCoordinates = getCoordinates;
 		getForecast = getForecast;
 	},
 }));
 
-const { default: getForecastUseCase } =
-	await import('../../../../src/weather/application/getForecastUseCase.js');
+const { default: getForecastUseCase } = await import('@/weather/application/getForecastUseCase');
 
 describe('getForecastUseCase', () => {
 	it('resolves the city to coordinates and combines them with the forecast', async () => {

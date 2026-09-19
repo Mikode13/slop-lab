@@ -1,6 +1,6 @@
-import { LocatedForecastModel } from '../domain/model/locatedForecastModel.js';
-import type { ForecastRepository } from '../domain/repository/forecastRepository.js';
-import { ForecastApiRepository } from '../infrastructure/repository/forecastApiRepository.js';
+import { LocatedForecastModel } from '@/weather/domain/model/locatedForecastModel';
+import type { ForecastRepository } from '@/weather/domain/repository/forecastRepository';
+import { ForecastApiRepository } from '@/weather/infrastructure/repository/forecastApiRepository';
 
 export default async function getForecastUseCase(city: string) {
 	const repository: ForecastRepository = new ForecastApiRepository();

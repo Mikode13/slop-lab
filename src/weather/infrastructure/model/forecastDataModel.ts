@@ -1,4 +1,4 @@
-import { ForecastModel } from '../../domain/model/forecastModel.js';
+import { ForecastModel } from '@/weather/domain/model/forecastModel';
 
 interface IForecastDataModel {
 	time: string;

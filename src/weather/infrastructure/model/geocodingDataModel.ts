@@ -1,4 +1,4 @@
-import { GeocodingModel } from '../../domain/model/geocodingModel.js';
+import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
 
 interface IGeocodingDataModel {
 	id: number;

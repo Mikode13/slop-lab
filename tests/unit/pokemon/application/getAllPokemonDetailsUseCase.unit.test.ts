@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PokemonDetailModel } from '../../../../src/pokemon/domain/model/pokemonDetailModel.js';
-import { PokemonModel } from '../../../../src/pokemon/domain/model/pokemonModel.js';
+import { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
+import { PokemonModel } from '@/pokemon/domain/model/pokemonModel';
 
 const getAll = vi.fn();
 const getDetail = vi.fn();
 
-vi.mock('../../../../src/pokemon/infrastructure/repository/pokemonApiRepository.js', () => ({
+vi.mock('@/pokemon/infrastructure/repository/pokemonApiRepository', () => ({
 	PokemonApiRepository: class {
 		getAll = getAll;
 		getDetail = getDetail;
@@ -13,7 +13,7 @@ vi.mock('../../../../src/pokemon/infrastructure/repository/pokemonApiRepository.
 }));
 
 const { getAllPokemonDetailsUseCase } =
-	await import('../../../../src/pokemon/application/getAllPokemonDetailsUseCase.js');
+	await import('@/pokemon/application/getAllPokemonDetailsUseCase');
 
 describe('getAllPokemonDetailsUseCase', () => {
 	it('fetches the page and resolves every listed Pokémon to its detail', async () => {

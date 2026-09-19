@@ -1,4 +1,4 @@
-import { ForecastModel } from './forecastModel.js';
+import { ForecastModel } from './forecastModel';
 
 export class LocatedForecastModel extends ForecastModel {
 	location: string;

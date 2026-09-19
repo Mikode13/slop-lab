@@ -1,13 +1,16 @@
 import axios from 'axios';
-import type { PokemonDetailModel } from '../../domain/model/pokemonDetailModel.js';
-import type { PokemonRepository } from '../../domain/repository/pokemonRepository.js';
-import type { Paginated } from '../../domain/model/paginated.js';
-import type { PokemonModel } from '../../domain/model/pokemonModel.js';
+import type { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
+import type { PokemonRepository } from '@/pokemon/domain/repository/pokemonRepository';
+import type { Paginated } from '@/pokemon/domain/model/paginated';
+import type { PokemonModel } from '@/pokemon/domain/model/pokemonModel';
 import {
 	pokemonDetailToDomain,
 	type PokemonDetailDataModel,
-} from '../model/pokemonDetailDataModel.js';
-import { pokemonListItemToDomain, type PokemonDataModel } from '../model/pokemonDataModel.js';
+} from '@/pokemon/infrastructure/model/pokemonDetailDataModel';
+import {
+	pokemonListItemToDomain,
+	type PokemonDataModel,
+} from '@/pokemon/infrastructure/model/pokemonDataModel';
 
 const POKEAPI_URL = 'https://pokeapi.co/api/v2/pokemon';
 

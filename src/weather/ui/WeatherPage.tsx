@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import getForecastUseCase from '../application/getForecastUseCase';
+import getForecastUseCase from '@/weather/application/getForecastUseCase';
 
 // Helper to turn a WMO weather code into an emoji
 function getWeatherEmoji(code: number): string {
