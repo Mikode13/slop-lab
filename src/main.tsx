@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import { ApplicationProvider } from './ApplicationContext';
+import { ApplicationProvider } from './ApplicationProvider';
 import { createApplication } from './compositionRoot';
 import './styles.css';
 

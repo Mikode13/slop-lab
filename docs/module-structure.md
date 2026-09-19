@@ -61,8 +61,9 @@ models don't take this qualifier; see the naming rule below for why.
   restating that provider on every model inside `infrastructure/model/` would only repeat
   what the folder already says.
 - **Ports live in domain, not `application/`.** A port is the stable contract other features
-  would depend on if they needed this module's capability; application already depends on
-  concrete infrastructure ahead of the composition root, so it is not the stable boundary.
+  would depend on if they needed this module's capability; application holds use cases that
+  orchestrate one feature's flows and change with them, so it is the least stable contract
+  for a peer to depend on.
   See the "Move project-owned ports from application to domain" entry in decisions.md.
 - **Name the port's folder concretely, not `interfaces/`.** `interfaces/` says nothing about
   what kind of contract is inside, and a domain can define more than one kind: a
@@ -116,3 +117,9 @@ models don't take this qualifier; see the naming rule below for why.
   (`Omit<ConstructorType<X>, 'total'>`) or make them methods. A subclass that adds fields to
   an existing model (`LocatedForecastModel`) takes the base instance plus a `Pick` of its own
   additions rather than spreading the instance, which loses its prototype.
+- **The React context that delivers the application is named after its component.**
+  `src/ApplicationProvider.tsx` exports `ApplicationProvider` and the `useApplication` hook;
+  the file follows the casing rule, PascalCase for a file whose primary export is a React
+  component. It is the only React-specific piece of the wiring, so any other framework's
+  adapter would replace this one file and nothing in `compositionRoot.ts` or the use case
+  factories.

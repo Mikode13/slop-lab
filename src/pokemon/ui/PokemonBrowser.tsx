@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
-import { useApplication } from '@/ApplicationContext';
+import { useApplication } from '@/ApplicationProvider';
 
 // Colors for every Pokémon type
 const TYPE_COLORS: Record<string, string> = {

@@ -521,7 +521,11 @@ Factories are checked end to end by the type system and keep application free of
 framework.
 
 **Consequences.** Application no longer imports infrastructure, which the architecture
-document had recorded as a known deviation. Use case tests pass a plain fake repository, so
+document had recorded as a known deviation. The reason the earlier entry
+"Move project-owned ports from application to domain" gave for keeping ports in domain
+(application depends on concrete infrastructure) no longer holds, so the architecture and
+module-structure documents now rest it on application being the least stable contract for a
+peer feature to depend on; that entry stays as written, as history. Use case tests pass a plain fake repository, so
 the `vi.mock` of an adapter module and the dynamic import that followed it are gone, and a
 new test covers that no forecast is requested when the city cannot be resolved. The context
 also gives component tests a place to inject fakes ([issue #22](https://github.com/Mikode13/slop-lab/issues/22)).
@@ -532,7 +536,7 @@ needed; that would be a new decision.
 
 Delivering the application through a React context is the one React-specific piece: the
 factories, `createApplication()`, and the `Application` type import nothing from React, and
-only `ApplicationContext.tsx` does. It is accepted for now and is the first candidate to
+only `ApplicationProvider.tsx` does. It is accepted for now and is the first candidate to
 extract into a shared library, with the framework-agnostic core separate from a per-framework
 adapter.
 

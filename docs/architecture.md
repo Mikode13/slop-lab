@@ -24,6 +24,7 @@ and naming rules.
 ```mermaid
 flowchart LR
     Main[main.tsx] --> Composition[compositionRoot.ts]
+    Main --> Provider[ApplicationProvider.tsx]
     Main --> App[App.tsx]
     Composition --> WeatherApp[weather/application]
     Composition --> PokemonApp[pokemon/application]
@@ -31,8 +32,10 @@ flowchart LR
     Composition --> PokemonInfra[pokemon/infrastructure]
     App --> WeatherUI[weather/ui]
     App --> PokemonUI[pokemon/ui]
-    WeatherUI --> WeatherApp
-    PokemonUI --> PokemonApp
+    WeatherUI --> Provider
+    PokemonUI --> Provider
+    Provider -.-> WeatherApp
+    Provider -.-> PokemonApp
     WeatherApp --> WeatherDomain[weather/domain]
     PokemonApp --> PokemonDomain[pokemon/domain]
     WeatherInfra --> WeatherDomain
@@ -58,13 +61,16 @@ shape and never on how it was built.
 - **Domain** owns business concepts and the ports through which a feature reaches
   infrastructure, without React, Axios, or provider response types. The ports live here, not
   in application, because domain is the stable boundary a feature exposes: other features
-  that eventually depend on it should point at domain, not at application, which currently
-  depends on concrete infrastructure.
+  that eventually depend on it should point at domain, not at application, whose use cases
+  orchestrate one feature's flows and change with them.
 - **Application** owns each feature's use cases. A use case is built by a factory that takes
   the domain port it needs (`createGetForecastUseCase(repository)`), so it never constructs
   infrastructure itself. It is the boundary through which UI obtains domain results.
 - The **composition root** (`src/compositionRoot.ts`) constructs the infrastructure adapters
   and passes them to the use case factories.
+- **`ApplicationProvider.tsx`** is the one React-specific piece of the wiring: a context that
+  delivers the built application to the UI, read with `useApplication()`. It holds no logic
+  of its own; the composition root and the factories it carries import nothing from React.
 - **Infrastructure** contains the HTTP adapters (`ForecastApiRepository`,
   `PokemonApiRepository`), the provider response shapes, and their mapping into domain
   models. It implements the domain-owned ports.
