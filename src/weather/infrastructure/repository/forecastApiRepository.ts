@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { ForecastModel } from '../../domain/model/forecastModel.js';
 import type { GeocodingModel } from '../../domain/model/geocodingModel.js';
-import type { Point } from '../../domain/model/pointModel.js';
+import type { Point } from '../../domain/model/point.js';
 import type { ForecastRepository } from '../../domain/repository/forecastRepository.js';
 import {
 	toDomain as forecastToDomain,

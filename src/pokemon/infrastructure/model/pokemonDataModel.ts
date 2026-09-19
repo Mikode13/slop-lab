@@ -1,10 +1,10 @@
 import { PokemonModel } from '../../domain/model/pokemonModel.js';
 
-export interface PokemonListItemResponseDto {
+export interface PokemonDataModel {
 	name: string;
 	url: string;
 }
 
-export function pokemonListItemToDomain(raw: PokemonListItemResponseDto): PokemonModel {
+export function pokemonListItemToDomain(raw: PokemonDataModel): PokemonModel {
 	return new PokemonModel({ name: raw.name, url: raw.url });
 }

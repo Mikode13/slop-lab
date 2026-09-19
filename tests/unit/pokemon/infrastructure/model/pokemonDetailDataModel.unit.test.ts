@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pokemonDetailToDomain } from '../../../../../src/pokemon/infrastructure/model/detailResponseModel.js';
+import { pokemonDetailToDomain } from '../../../../../src/pokemon/infrastructure/model/pokemonDetailDataModel.js';
 import { PokemonDetailModel } from '../../../../../src/pokemon/domain/model/pokemonDetailModel.js';
 
 describe('pokemonDetailToDomain', () => {

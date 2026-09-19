@@ -21,21 +21,22 @@ user/
 │   └── getAllUsersUseCase.ts → getAllUsersUseCase
 ├── infrastructure/
 │   ├── model/
-│   │   ├── <provider>DetailModel.ts   → <Provider>DetailModel
-│   │   └── <provider>SummaryModel.ts  → <Provider>SummaryModel
+│   │   ├── userDetailDataModel.ts    → UserDetailDataModel
+│   │   └── userSummaryDataModel.ts   → UserSummaryDataModel
 │   └── repository/
-│       └── <provider>Repository.ts    → <Provider>Repository (implements UserRepository)
+│       └── <provider>Repository.ts   → <Provider>Repository (implements UserRepository)
 └── ui/
     └── UserPage.tsx   → WIP: components, state, and stores aren't decided yet
 ```
 
-Replace `<provider>` / `<Provider>` with the concrete external system the adapter talks to
-— `PokeApi`, `PokemonApi`, `LocalStorage`, `GitHubApi`, whatever reads clearly for that
-feature. Never `Impl`: a generic "this is an implementation" suffix stops working the
-moment a port has a second adapter, because it says nothing about which one. The provider
-name always does. The exact spelling is a per-feature call, not a fixed vocabulary — it
-does not have to match the external product's own brand name or abbreviation, it only has
-to distinguish this adapter from any other adapter of the same port.
+Replace `<provider>` / `<Provider>` in the repository file name with the concrete external
+system the adapter talks to — `PokeApi`, `PokemonApi`, `LocalStorage`, `GitHubApi`, whatever
+reads clearly for that feature. Never `Impl`: a generic "this is an implementation" suffix
+stops working the moment a port has a second adapter, because it says nothing about which
+one. The provider name always does. The exact spelling is a per-feature call, not a fixed
+vocabulary — it does not have to match the external product's own brand name or abbreviation,
+it only has to distinguish this adapter from any other adapter of the same port. Infra
+models don't take this qualifier; see the naming rule below for why.
 
 ## Naming rules
 
@@ -49,11 +50,16 @@ to distinguish this adapter from any other adapter of the same port.
 - **Domain is bare.** No qualifier: `UserDetailModel`, `UserRepository`. The folder
   (`domain/`) already says what it is; the name says only what it is a model or contract
   of, dropping the feature-name prefix the path already supplies.
-- **Infrastructure is provider-qualified.** Every infrastructure model, repository
-  implementation, or adapter is prefixed with the concrete provider it speaks to. This is
-  the only thing that distinguishes an infra name from a domain name at a glance, and it
-  scales to any number of adapters for the same port without inventing new vocabulary each
-  time (`PokeApiRepository`, `LocalStorageRepository`, ... all implement `UserRepository`).
+- **Infrastructure repositories are provider-qualified; infrastructure models aren't.** A
+  repository implementation is prefixed with the concrete provider it speaks to
+  (`PokemonApiRepository`, `LocalStorageRepository`, ... all implementing the same port),
+  because that's the one thing that actually varies once a port gets a second adapter, and a
+  generic `Impl` suffix stops distinguishing them the moment it does. An infrastructure model
+  instead mirrors its domain counterpart's name with `Data` inserted before `Model`
+  (`PokemonDetailModel` → `PokemonDetailDataModel`, `ForecastModel` → `ForecastDataModel`): it
+  belongs to whichever single provider its feature's repository already commits to, so
+  restating that provider on every model inside `infrastructure/model/` would only repeat
+  what the folder already says.
 - **Ports live in domain, not `application/`.** A port is the stable contract other features
   would depend on if they needed this module's capability; application already depends on
   concrete infrastructure ahead of the composition root, so it is not the stable boundary.

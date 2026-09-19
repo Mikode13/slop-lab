@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
-// Component and end-to-end boundaries join this file as the layered migration reaches the UI
-// and infrastructure; see docs/testing.md for the boundaries this project currently exposes.
+// Component and end-to-end boundaries join this file as they're adopted; see README.md's
+// "current status" for which of the testing standard's boundaries exist today.
 export default defineConfig({
 	test: {
 		projects: [

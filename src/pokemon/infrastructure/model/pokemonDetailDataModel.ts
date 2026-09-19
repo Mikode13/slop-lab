@@ -1,6 +1,6 @@
 import { PokemonDetailModel } from '../../domain/model/pokemonDetailModel.js';
 
-export interface PokemonDetailResponseDto {
+export interface PokemonDetailDataModel {
 	id: number;
 	name: string;
 	height: number;
@@ -16,7 +16,7 @@ export interface PokemonDetailResponseDto {
 	}[];
 }
 
-export function pokemonDetailToDomain(raw: PokemonDetailResponseDto): PokemonDetailModel {
+export function pokemonDetailToDomain(raw: PokemonDetailDataModel): PokemonDetailModel {
 	return new PokemonDetailModel({
 		id: raw.id,
 		name: raw.name,

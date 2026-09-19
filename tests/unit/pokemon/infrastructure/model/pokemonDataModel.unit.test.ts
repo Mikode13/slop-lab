@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pokemonListItemToDomain } from '../../../../../src/pokemon/infrastructure/model/paginatedResponseModel.js';
+import { pokemonListItemToDomain } from '../../../../../src/pokemon/infrastructure/model/pokemonDataModel.js';
 import { PokemonModel } from '../../../../../src/pokemon/domain/model/pokemonModel.js';
 
 describe('pokemonListItemToDomain', () => {
