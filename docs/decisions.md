@@ -530,6 +530,12 @@ The factory pattern makes a use case's file name differ from its exported name, 
 becomes worth revisiting if wiring by hand grows painful or per-use-case lazy loading is
 needed; that would be a new decision.
 
+Delivering the application through a React context is the one React-specific piece: the
+factories, `createApplication()`, and the `Application` type import nothing from React, and
+only `ApplicationContext.tsx` does. It is accepted for now and is the first candidate to
+extract into a shared library, with the framework-agnostic core separate from a per-framework
+adapter.
+
 **Lesson.** Dependency inversion needs a place that knows both sides, not a library. Passing
 the port as an argument achieves the inversion, and the composition root is just the function
 that does the passing.
