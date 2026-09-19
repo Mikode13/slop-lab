@@ -4,6 +4,7 @@
 		"module": "esnext",
 		"moduleResolution": "bundler",
 		"noEmit": true,
+		"experimentalDecorators": true,
 		"paths": { "@/*": ["../src/*"] }
 	},
 	"include": ["**/*.ts", "**/*.tsx"]

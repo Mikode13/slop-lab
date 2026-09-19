@@ -435,3 +435,37 @@ that way.
 **Lesson.** A type-check configuration should model the resolution that actually runs the
 code. Inheriting a stricter model made every import in `src/` pay for a runtime that does not
 exist here.
+
+## Build infrastructure data models with class-transformer
+
+**Decision.** Every infrastructure data model is a class that implements `DataModel<T>`
+(`toDomain(): T`, in `src/common/infrastructure/dataModel.ts`), declares its fields with
+`@Expose` and `@Type`, and is built by `fromJson(Model, json)`, a thin wrapper over
+`plainToInstance` with `excludeExtraneousValues`. Repositories call
+`fromJson(...).toDomain()`. This replaces both shapes the two features used: Pokémon's plain
+interfaces with free `toDomain` functions, and Weather's classes with an unused constructor
+and a duplicate `IXDataModel` interface. The domain models keep their own constructors.
+
+**Context.** Amends "Give the Weather feature domain, application, infrastructure, and UI
+folders", which recorded Weather's classes as an interim shape, and the Pokémon entry's
+free-function mappers ([issue #19](https://github.com/Mikode13/slop-lab/issues/19)). The
+mappers existed because a class typed onto an axios response is never instantiated, so its
+`toDomain()` threw. `plainToInstance` is what actually constructs the instance, which makes
+the method safe again while removing the `this.x = x` constructors and their duplicate
+parameter interfaces. A spike first checked that decorators compile under tsc, Vitest, and
+the Vite build.
+
+**Consequences.** Both tsconfigs set `experimentalDecorators`, because `class-transformer`
+uses the legacy decorator signature that TypeScript's standard decorators do not provide.
+`reflect-metadata` becomes a dependency, imported once in `main.tsx` and in
+`tests/setup.ts`: `@Type` calls `Reflect.getMetadata`, and without it every model fails at
+load. Model tests now start from raw JSON and go through `fromJson`, so they cover the
+decorators and the dropping of undeclared fields, not only the mapping. Both features were
+also run against the real PokéAPI and Open-Meteo. Fields are still unvalidated at runtime:
+a wrong type from the provider passes through unchanged, which
+[issue #20](https://github.com/Mikode13/slop-lab/issues/20) covers.
+
+**Lesson.** The earlier bug and its fix were the same fact seen from two sides: a method on
+a data model works only if something constructs the instance. Putting that construction in
+one named function (`fromJson`) makes it a single place to get right instead of a habit every
+repository has to remember.

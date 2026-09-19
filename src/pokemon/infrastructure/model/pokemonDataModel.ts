@@ -1,10 +1,12 @@
+import { Expose } from 'class-transformer';
 import { PokemonModel } from '@/pokemon/domain/model/pokemonModel';
+import type { DataModel } from '@/common/infrastructure/dataModel';
 
-export interface PokemonDataModel {
-	name: string;
-	url: string;
-}
+export class PokemonDataModel implements DataModel<PokemonModel> {
+	@Expose() name!: string;
+	@Expose() url!: string;
 
-export function pokemonListItemToDomain(raw: PokemonDataModel): PokemonModel {
-	return new PokemonModel({ name: raw.name, url: raw.url });
+	toDomain(): PokemonModel {
+		return new PokemonModel({ name: this.name, url: this.url });
+	}
 }

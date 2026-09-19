@@ -1,28 +1,45 @@
+import { Expose, Type } from 'class-transformer';
 import { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
+import type { DataModel } from '@/common/infrastructure/dataModel';
 
-export interface PokemonDetailDataModel {
-	id: number;
-	name: string;
-	height: number;
-	weight: number;
-	sprites: {
-		front_default: string;
-	};
-	types: {
-		slot: number;
-		type: {
-			name: string;
-		};
-	}[];
+class PokemonSpritesDataModel {
+	@Expose() front_default!: string;
 }
 
-export function pokemonDetailToDomain(raw: PokemonDetailDataModel): PokemonDetailModel {
-	return new PokemonDetailModel({
-		id: raw.id,
-		name: raw.name,
-		height: raw.height,
-		weight: raw.weight,
-		sprite: raw.sprites.front_default,
-		types: raw.types.map(type => ({ slot: type.slot, typeName: type.type.name })),
-	});
+class PokemonTypeNameDataModel {
+	@Expose() name!: string;
+}
+
+class PokemonTypeSlotDataModel {
+	@Expose() slot!: number;
+
+	@Expose()
+	@Type(() => PokemonTypeNameDataModel)
+	type!: PokemonTypeNameDataModel;
+}
+
+export class PokemonDetailDataModel implements DataModel<PokemonDetailModel> {
+	@Expose() id!: number;
+	@Expose() name!: string;
+	@Expose() height!: number;
+	@Expose() weight!: number;
+
+	@Expose()
+	@Type(() => PokemonSpritesDataModel)
+	sprites!: PokemonSpritesDataModel;
+
+	@Expose()
+	@Type(() => PokemonTypeSlotDataModel)
+	types!: PokemonTypeSlotDataModel[];
+
+	toDomain(): PokemonDetailModel {
+		return new PokemonDetailModel({
+			id: this.id,
+			name: this.name,
+			height: this.height,
+			weight: this.weight,
+			sprite: this.sprites.front_default,
+			types: this.types.map(type => ({ slot: type.slot, typeName: type.type.name })),
+		});
+	}
 }

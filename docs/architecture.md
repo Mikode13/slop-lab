@@ -75,8 +75,8 @@ directly.
 
 The exception is that application depends on infrastructure, because each use case
 constructs its concrete repository itself. The decision log records this as a known,
-temporary violation. The TypeScript response shapes in infrastructure are local assertions,
-not runtime-validated contracts, so external responses, failed requests, request timing, and
+temporary violation. Infrastructure builds its data models with `class-transformer`, which
+declares the fields it reads but does not validate their types, so external responses, failed requests, request timing, and
 cancellation can still affect UI state directly.
 
 ## Important flows
@@ -98,9 +98,7 @@ root:
   to the application use cases used by the UI, removing application's direct dependency on
   infrastructure. It is tracked in [issue #18](https://github.com/Mikode13/slop-lab/issues/18),
   alongside the choice of a dependency-injection library.
-- Infrastructure models will move to a shared `DataModel<T>` contract built on
-  `class-transformer` ([issue #19](https://github.com/Mikode13/slop-lab/issues/19)), and
-  provider responses will be validated at that boundary
+- Provider responses will be validated at the infrastructure boundary
   ([issue #20](https://github.com/Mikode13/slop-lab/issues/20)).
 
 Until those land, reviewers should report the remaining coupling as known material rather

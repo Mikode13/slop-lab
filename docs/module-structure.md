@@ -84,16 +84,13 @@ models don't take this qualifier; see the naming rule below for why.
   split because it already holds two kinds of artifact. Don't create a category folder in
   anticipation of a second kind that doesn't exist yet; add it when application actually
   gains one.
-- **A shared `DataModel<T>` contract for infrastructure is planned, not yet adopted.** Every
-  infrastructure model would implement `toDomain(): T`, enforced by a common interface
-  (mirrors vivolt.front's own `DataModel<T>`), with the repository constructing the class
-  explicitly (`new XDataModel(raw).toDomain()`) rather than trusting a generic type
-  parameter to have done it. Pokémon's infrastructure models are plain interfaces with a free
-  `toDomain` function today — less to write while the project is this small, and a contained,
-  additive change to switch over once `class-transformer` adoption (see decisions.md) makes
-  the constructor boilerplate this would otherwise add worth removing at the same time.
-  Weather's infrastructure models (`ForecastDataModel`, `GeocodingDataModel`) are the
-  exception: they are already classes, with a constructor nothing calls and a duplicate
-  `IXDataModel`-shaped parameter interface, because that's the shape `class-transformer`
-  adoption will need. Both patterns are interim; `class-transformer` adoption converts every
-  infrastructure model to the same shape, tracked by issue #19.
+- **Infrastructure models implement `DataModel<T>` and are built with `fromJson`.** Each one
+  is a class whose fields carry `@Expose` (and `@Type` for nested objects) and that
+  implements `toDomain(): T` from `src/common/infrastructure/dataModel.ts`. The repository
+  builds it explicitly, `fromJson(XDataModel, response.data).toDomain()`, never by typing an
+  HTTP response as the class: `axios.get<T>()` only asserts a type at compile time and never
+  constructs an instance. `fromJson` uses `excludeExtraneousValues`, so a field the model
+  does not declare is dropped instead of copied. The fields keep the provider's own names
+  (`temperature_2m`); renaming happens in `toDomain()`. Decorators need
+  `experimentalDecorators` in both tsconfigs and `reflect-metadata` imported once at the
+  entry point and in the Vitest setup file.
