@@ -469,3 +469,30 @@ a wrong type from the provider passes through unchanged, which
 a data model works only if something constructs the instance. Putting that construction in
 one named function (`fromJson`) makes it a single place to get right instead of a habit every
 repository has to remember.
+
+## Type domain constructors with ConstructorType instead of a duplicate interface
+
+**Decision.** Domain model constructors take `ConstructorType<TheClass>`, defined in
+`src/common/domain/constructorType.ts` as the class's own members with every function member
+removed: methods, function-typed properties, and optional or nullable ones. The
+`IForecastModel`/`IGeocodingModel` interfaces and the inline `{ id: number; ... }` parameter
+types on the Pokémon and Weather models are gone. The assignments in each constructor stay.
+
+**Context.** Each domain class listed its fields twice, once as members and once as the
+constructor parameter type, so adding a field meant editing both and TypeScript only noticed
+when they drifted. vivolt.front solves this with the same helper, but its version filters on
+`T[K] extends Function`, which lets optional and nullable functions through as required
+constructor data. The variant here uses `NonNullable<T[K]>` and `-?` to close that hole while
+keeping optional data fields optional.
+
+**Consequences.** Getters remain a gap: to the type system they are ordinary fields, so a
+model with a getter has to omit it explicitly or turn it into a method. Neither feature has
+one today. `LocatedForecastModel` keeps taking a base forecast plus a `Pick` of its own
+fields, because spreading a class instance into the parameter loses its prototype and the
+lint rule against it is right in general. The type is covered by a type-level test that
+`tsc` checks under `tests/`. Infrastructure models are unaffected: they declare their fields
+with decorators and take no constructor arguments.
+
+**Lesson.** A helper copied from a reference project should be tested against the cases the
+reference never hit. The original passed for every model vivolt.front had and would have
+passed for ours too, yet it failed for a class with an optional callback.

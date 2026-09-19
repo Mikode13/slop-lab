@@ -1,3 +1,5 @@
+import type { ConstructorType } from '@/common/domain/constructorType';
+
 export class PokemonDetailModel {
 	id: number;
 	name: string;
@@ -6,27 +8,13 @@ export class PokemonDetailModel {
 	sprite: string;
 	types: PokemonType[];
 
-	constructor({
-		id,
-		name,
-		height,
-		weight,
-		sprite,
-		types,
-	}: {
-		id: number;
-		name: string;
-		height: number;
-		weight: number;
-		sprite: string;
-		types: PokemonType[];
-	}) {
-		this.id = id;
-		this.name = name;
-		this.height = height;
-		this.weight = weight;
-		this.sprite = sprite;
-		this.types = types;
+	constructor(pokemon: ConstructorType<PokemonDetailModel>) {
+		this.id = pokemon.id;
+		this.name = pokemon.name;
+		this.height = pokemon.height;
+		this.weight = pokemon.weight;
+		this.sprite = pokemon.sprite;
+		this.types = pokemon.types;
 	}
 }
 

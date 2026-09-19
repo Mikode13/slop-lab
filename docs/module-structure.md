@@ -94,3 +94,11 @@ models don't take this qualifier; see the naming rule below for why.
   (`temperature_2m`); renaming happens in `toDomain()`. Decorators need
   `experimentalDecorators` in both tsconfigs and `reflect-metadata` imported once at the
   entry point and in the Vitest setup file.
+- **Domain model constructors take `ConstructorType<Self>`.** A domain class declares its
+  fields once and its constructor parameter is `ConstructorType<TheClass>`
+  (`src/common/domain/constructorType.ts`): the class's own members minus every function, so
+  there is no separate `IForecastModel` interface repeating the field list. Getters are the
+  one gap, because TypeScript cannot tell a getter from a field; omit them by hand
+  (`Omit<ConstructorType<X>, 'total'>`) or make them methods. A subclass that adds fields to
+  an existing model (`LocatedForecastModel`) takes the base instance plus a `Pick` of its own
+  additions rather than spreading the instance, which loses its prototype.

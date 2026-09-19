@@ -1,10 +1,4 @@
-interface IForecastModel {
-	time: string;
-	temperature2m: number;
-	relativehumidity2m: number;
-	weatherCode: number;
-	windSpeed10m: number;
-}
+import type { ConstructorType } from '@/common/domain/constructorType';
 
 export class ForecastModel {
 	time: string;
@@ -13,17 +7,11 @@ export class ForecastModel {
 	weatherCode: number;
 	windSpeed10m: number;
 
-	constructor({
-		time,
-		temperature2m,
-		relativehumidity2m,
-		weatherCode,
-		windSpeed10m,
-	}: IForecastModel) {
-		this.time = time;
-		this.temperature2m = temperature2m;
-		this.relativehumidity2m = relativehumidity2m;
-		this.weatherCode = weatherCode;
-		this.windSpeed10m = windSpeed10m;
+	constructor(forecast: ConstructorType<ForecastModel>) {
+		this.time = forecast.time;
+		this.temperature2m = forecast.temperature2m;
+		this.relativehumidity2m = forecast.relativehumidity2m;
+		this.weatherCode = forecast.weatherCode;
+		this.windSpeed10m = forecast.windSpeed10m;
 	}
 }
