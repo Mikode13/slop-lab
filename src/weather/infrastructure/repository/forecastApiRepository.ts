@@ -12,7 +12,7 @@ const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
 export class ForecastApiRepository implements ForecastRepository {
 	async getCoordinates(city: string): Promise<GeocodingModel> {
-		const response = await axios.get<{ results?: object[] } | null>(
+		const response = await axios.get<{ results?: Record<string, unknown>[] } | null>(
 			`${GEOCODING_URL}?name=${city}&count=1&language=en&format=json`,
 		);
 
@@ -25,7 +25,7 @@ export class ForecastApiRepository implements ForecastRepository {
 		return fromJson(GeocodingDataModel, places[0]).toDomain();
 	}
 	async getForecast({ latitude, longitude }: Point): Promise<ForecastModel> {
-		const response = await axios.get<{ current: object }>(
+		const response = await axios.get<{ current: Record<string, unknown> }>(
 			`${FORECAST_URL}?latitude=${String(latitude)}&longitude=${String(longitude)}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m`,
 		);
 

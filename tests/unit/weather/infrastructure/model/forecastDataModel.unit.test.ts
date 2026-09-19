@@ -15,6 +15,7 @@ describe('ForecastDataModel', () => {
 		});
 
 		expect(data).toBeInstanceOf(ForecastDataModel);
+		expect(data).not.toHaveProperty('interval');
 		expect(data.toDomain()).toEqual(
 			new ForecastModel({
 				time: '2026-09-19T00:00',

@@ -443,7 +443,9 @@ exist here.
 `@Expose` and `@Type`, and is built by `fromJson(Model, json)`
 (`src/common/infrastructure/fromJson.ts`), a thin wrapper over `plainToInstance` with
 `excludeExtraneousValues`. The contract is domain-side because it names no library; the
-wrapper is infrastructure because it is the only code that depends on `class-transformer`. Repositories call
+wrapper and the decorated models are infrastructure because they depend on `class-transformer`.
+The models use its decorators and the wrapper only owns the construction call, so replacing
+the library touches every data model, not one file. Repositories call
 `fromJson(...).toDomain()`. This replaces both shapes the two features used: Pokémon's plain
 interfaces with free `toDomain` functions, and Weather's classes with an unused constructor
 and a duplicate `IXDataModel` interface. The domain models keep their own constructors.

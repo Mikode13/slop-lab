@@ -89,7 +89,8 @@ models don't take this qualifier; see the naming rule below for why.
   implements `toDomain(): T` from the `DataModel<T>` contract in
   `src/common/domain/dataModel.ts`, which belongs to the project's domain because it says
   nothing about how data is fetched. `fromJson` lives in `src/common/infrastructure/fromJson.ts`
-  because it is the part that depends on `class-transformer`. The repository
+  because it is the construction call built on `class-transformer`, whose
+  decorators the models themselves also use. The repository
   builds it explicitly, `fromJson(XDataModel, response.data).toDomain()`, never by typing an
   HTTP response as the class: `axios.get<T>()` only asserts a type at compile time and never
   constructs an instance. `fromJson` uses `excludeExtraneousValues`, so a field the model

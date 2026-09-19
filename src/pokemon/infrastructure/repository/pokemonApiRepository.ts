@@ -11,7 +11,7 @@ const POKEAPI_URL = 'https://pokeapi.co/api/v2/pokemon';
 
 export class PokemonApiRepository implements PokemonRepository {
 	async getAll(offset: number, limit: number): Promise<Paginated<PokemonModel>> {
-		const response = await axios.get<Paginated<object>>(
+		const response = await axios.get<Paginated<Record<string, unknown>>>(
 			`${POKEAPI_URL}?limit=${String(limit)}&offset=${String(offset)}`,
 		);
 
@@ -24,7 +24,7 @@ export class PokemonApiRepository implements PokemonRepository {
 	}
 
 	async getDetail(url: string): Promise<PokemonDetailModel> {
-		const response = await axios.get<object>(url);
+		const response = await axios.get<Record<string, unknown>>(url);
 		return fromJson(PokemonDetailDataModel, response.data).toDomain();
 	}
 }
