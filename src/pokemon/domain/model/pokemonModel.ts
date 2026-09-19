@@ -1,4 +1,4 @@
-export class PokemonDto {
+export class PokemonModel {
 	name: string;
 	url: string;
 

@@ -17,9 +17,8 @@ user/
 │   └── repository/
 │       └── userRepository.ts     → UserRepository (the port)
 ├── application/
-│   └── useCase/
-│       ├── getUserUseCase.ts     → getUserUseCase
-│       └── getAllUsersUseCase.ts → getAllUsersUseCase
+│   ├── getUserUseCase.ts     → getUserUseCase
+│   └── getAllUsersUseCase.ts → getAllUsersUseCase
 ├── infrastructure/
 │   ├── model/
 │   │   ├── <provider>DetailModel.ts   → <Provider>DetailModel
@@ -72,16 +71,23 @@ to distinguish this adapter from any other adapter of the same port.
   stay separate even though they look identical right now.
 - **Use cases are a verb plus what they do, suffixed `UseCase`:** `getUserUseCase`,
   `createUserUseCase`, `deleteUserUseCase`.
-- **Subdivide a layer's folder only once it holds more than one kind of artifact.** `domain/`
-  stays flat until it has something besides models (like a repository port); `application/`
-  today only ever holds `useCase/`, so it isn't subdivided further. Don't create an empty
-  category folder in anticipation of a file that doesn't exist yet.
+- **Subdivide a layer's folder only once it holds more than one kind of artifact.**
+  `application/` holds only use case files today, in both features that exist, so it stays
+  flat — a `useCase/` subfolder would separate use cases from nothing, since there is nothing
+  else in `application/` to separate them from. `domain/` earns its `model/` and `repository/`
+  split because it already holds two kinds of artifact. Don't create a category folder in
+  anticipation of a second kind that doesn't exist yet; add it when application actually
+  gains one.
 - **A shared `DataModel<T>` contract for infrastructure is planned, not yet adopted.** Every
   infrastructure model would implement `toDomain(): T`, enforced by a common interface
   (mirrors vivolt.front's own `DataModel<T>`), with the repository constructing the class
   explicitly (`new XDataModel(raw).toDomain()`) rather than trusting a generic type
-  parameter to have done it. Today's infrastructure models stay as plain interfaces with a
-  free `toDomain` function instead — less to write while the project is this small, and a
-  contained, additive change to switch over once `class-transformer` adoption (see
-  decisions.md) makes the constructor boilerplate this would otherwise add worth removing
-  at the same time.
+  parameter to have done it. Pokémon's infrastructure models are plain interfaces with a free
+  `toDomain` function today — less to write while the project is this small, and a contained,
+  additive change to switch over once `class-transformer` adoption (see decisions.md) makes
+  the constructor boilerplate this would otherwise add worth removing at the same time.
+  Weather's infrastructure models (`ForecastDataModel`, `GeocodingDataModel`) are the
+  exception: they are already classes, with a constructor nothing calls and a duplicate
+  `IXDataModel`-shaped parameter interface, because that's the shape `class-transformer`
+  adoption will need. Both patterns are interim; `class-transformer` adoption converts every
+  infrastructure model to the same shape, tracked by issue #19.

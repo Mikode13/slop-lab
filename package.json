@@ -23,7 +23,7 @@
 		"format:check": "prettier . --check",
 		"lint": "eslint . --max-warnings 0",
 		"lint:fix": "eslint . --fix",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsc --noEmit && tsc -p tests/tsconfig.json --noEmit",
 		"check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:ai-review",
 		"test": "pnpm run test:unit",
 		"test:unit": "vitest run --project unit",

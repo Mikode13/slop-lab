@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { PokemonDetailModel } from '../../domain/model/detailModel.js';
 import type { PokemonRepository } from '../../domain/repository/pokemonRepository.js';
 import type { Paginated } from '../../domain/model/paginated.js';
-import type { PokemonDto } from '../../domain/model/pokemonDtoModel.js';
+import type { PokemonModel } from '../../domain/model/pokemonModel.js';
 import {
 	pokemonDetailToDomain,
 	type PokemonDetailResponseDto,
@@ -15,7 +15,7 @@ import {
 const POKEAPI_URL = 'https://pokeapi.co/api/v2/pokemon';
 
 export class PokemonApiRepository implements PokemonRepository {
-	async getAll(offset: number, limit: number): Promise<Paginated<PokemonDto>> {
+	async getAll(offset: number, limit: number): Promise<Paginated<PokemonModel>> {
 		const response = await axios.get<Paginated<PokemonListItemResponseDto>>(
 			`${POKEAPI_URL}?limit=${String(limit)}&offset=${String(offset)}`,
 		);

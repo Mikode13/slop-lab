@@ -1,8 +1,8 @@
 import type { PokemonDetailModel } from '../model/detailModel.js';
 import type { Paginated } from '../model/paginated.js';
-import type { PokemonDto } from '../model/pokemonDtoModel.js';
+import type { PokemonModel } from '../model/pokemonModel.js';
 
 export interface PokemonRepository {
-	getAll(offset: number, limit: number): Promise<Paginated<PokemonDto>>;
+	getAll(offset: number, limit: number): Promise<Paginated<PokemonModel>>;
 	getDetail(url: string): Promise<PokemonDetailModel>;
 }

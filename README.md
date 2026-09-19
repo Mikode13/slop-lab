@@ -26,11 +26,12 @@ remaining badly designed, which is the first thing the project demonstrates.
 
 Working: the weather panel, the Pokémon list with pagination, and the production build.
 
-Not yet adopted:
+Partially adopted:
 
 - the [testing standard](https://github.com/Mikode13/engineering/blob/main/standards/testing.md);
-  the application has no test suite, no `test` script, and no Tests capability in CI. See
-  [docs/decisions.md](docs/decisions.md).
+  `tests/unit/` covers the layered Pokémon and Weather features with a `test` script and a
+  Tests capability in CI, but `component/`, `integration/`, and `external/` are not started
+  yet. See [docs/decisions.md](docs/decisions.md).
 
 ## Requirements
 
@@ -55,12 +56,13 @@ so a network connection is the only external requirement.
 | `pnpm build`              | Produce the production build in `dist/`                             |
 | `pnpm preview`            | Serve the production build locally                                  |
 | `pnpm run check`          | Formatting, linting, type checking, and the AI review pilot's tests |
+| `pnpm test`               | The unit suite under `tests/unit/`                                  |
 | `pnpm run test:ai-review` | Only the AI review pilot's tests                                    |
 | `pnpm run format`         | Rewrite files with Prettier                                         |
 | `pnpm run lint:fix`       | Apply the ESLint fixes that can be applied safely                   |
 
-`pnpm run check` is what CI runs and what the `pre-push` hook runs. The AI review pilot's
-tests cover its temporary tooling, not the application.
+`pnpm run check` and `pnpm test` are what CI and the `pre-push` hook both run, as separate
+steps. The AI review pilot's tests cover its temporary tooling, not the application.
 
 The repository also hosts a temporary
 [AI review pilot](docs/ai-review-pilot.md). It is evaluated separately from deterministic
