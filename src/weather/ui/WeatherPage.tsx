@@ -101,20 +101,36 @@ function getWeatherDescription(code: number): string {
 	}
 }
 
+const DEFAULT_VALUES = {
+	city: 'Madrid',
+	country: 'Spain',
+	placeName: '',
+	temperature: 0,
+	humidity: 0,
+	wind: 0,
+	weatherCode: 0,
+};
+
 export default function WeatherPage() {
-	const [city, setCity] = useState('Madrid');
-	const [country, setCountry] = useState('');
-	const [placeName, setPlaceName] = useState('');
-	const [temperature, setTemperature] = useState(0);
-	const [humidity, setHumidity] = useState(0);
-	const [wind, setWind] = useState(0);
-	const [weatherCode, setWeatherCode] = useState(0);
+	const [city, setCity] = useState(DEFAULT_VALUES.city);
+	const [country, setCountry] = useState(DEFAULT_VALUES.country);
+	const [placeName, setPlaceName] = useState(DEFAULT_VALUES.placeName);
+	const [temperature, setTemperature] = useState(DEFAULT_VALUES.temperature);
+	const [humidity, setHumidity] = useState(DEFAULT_VALUES.humidity);
+	const [wind, setWind] = useState(DEFAULT_VALUES.wind);
+	const [weatherCode, setWeatherCode] = useState(DEFAULT_VALUES.weatherCode);
 	const [loading, setLoading] = useState(false);
 
 	// Search for the city as the user types
 	useEffect(() => {
 		const search = async () => {
-			if (!city || city.length <= 2) {
+			if (!city || city.length < 2) {
+				setCountry('');
+				setPlaceName(DEFAULT_VALUES.placeName);
+				setTemperature(DEFAULT_VALUES.temperature);
+				setHumidity(DEFAULT_VALUES.humidity);
+				setWind(DEFAULT_VALUES.wind);
+				setWeatherCode(DEFAULT_VALUES.weatherCode);
 				return;
 			}
 
@@ -166,15 +182,21 @@ export default function WeatherPage() {
 
 			{loading && <p>Loading...</p>}
 
-			<div style={{ marginTop: '24px' }}>
-				<h2 style={{ margin: '0 0 8px' }}>{`${placeName}, ${country}`}</h2>
-				<div style={{ fontSize: '64px', lineHeight: '1' }}>{getWeatherEmoji(weatherCode)}</div>
-				<p style={{ fontSize: '32px', margin: '8px 0' }}>{Math.round(temperature)}°C</p>
-				<p style={{ color: '#666', margin: '0' }}>{getWeatherDescription(weatherCode)}</p>
-				<p style={{ color: '#666', margin: '4px 0 0' }}>
-					Humidity {humidity}% · Wind {wind} km/h
-				</p>
-			</div>
+			{city.length >= 2 ? (
+				<div style={{ marginTop: '24px' }}>
+					<h2 style={{ margin: '0 0 8px' }}>{`${placeName}, ${country}`}</h2>
+					<div style={{ fontSize: '64px', lineHeight: '1' }}>{getWeatherEmoji(weatherCode)}</div>
+					<p style={{ fontSize: '32px', margin: '8px 0' }}>{Math.round(temperature)}°C</p>
+					<p style={{ color: '#666', margin: '0' }}>{getWeatherDescription(weatherCode)}</p>
+					<p style={{ color: '#666', margin: '4px 0 0' }}>
+						Humidity {humidity}% · Wind {wind} km/h
+					</p>
+				</div>
+			) : (
+				<div>
+					<p>Please introduce a valid city name in order to start</p>
+				</div>
+			)}
 		</div>
 	);
 }

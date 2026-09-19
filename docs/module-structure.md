@@ -12,8 +12,8 @@ behind each naming choice lives in [decisions.md](decisions.md) and is not repea
 user/
 ├── domain/
 │   ├── model/
-│   │   ├── detailModel.ts        → UserDetailModel
-│   │   └── summaryModel.ts       → UserSummaryModel
+│   │   ├── userDetailModel.ts    → UserDetailModel
+│   │   └── userSummaryModel.ts   → UserSummaryModel
 │   └── repository/
 │       └── userRepository.ts     → UserRepository (the port)
 ├── application/

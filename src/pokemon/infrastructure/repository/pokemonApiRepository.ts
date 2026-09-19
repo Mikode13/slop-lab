@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { PokemonDetailModel } from '../../domain/model/detailModel.js';
+import type { PokemonDetailModel } from '../../domain/model/pokemonDetailModel.js';
 import type { PokemonRepository } from '../../domain/repository/pokemonRepository.js';
 import type { Paginated } from '../../domain/model/paginated.js';
 import type { PokemonModel } from '../../domain/model/pokemonModel.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PokemonDetailModel } from '../../../../src/pokemon/domain/model/detailModel.js';
+import { PokemonDetailModel } from '../../../../src/pokemon/domain/model/pokemonDetailModel.js';
 import { PokemonModel } from '../../../../src/pokemon/domain/model/pokemonModel.js';
 
 const getAll = vi.fn();

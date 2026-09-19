@@ -1,4 +1,4 @@
-import type { PokemonDetailModel } from '../model/detailModel.js';
+import type { PokemonDetailModel } from '../model/pokemonDetailModel.js';
 import type { Paginated } from '../model/paginated.js';
 import type { PokemonModel } from '../model/pokemonModel.js';
 

@@ -1,4 +1,4 @@
-import { PokemonDetailModel } from '../../domain/model/detailModel.js';
+import { PokemonDetailModel } from '../../domain/model/pokemonDetailModel.js';
 
 export interface PokemonDetailResponseDto {
 	id: number;
