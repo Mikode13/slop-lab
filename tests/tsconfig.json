@@ -1,7 +1,10 @@
 {
 	"extends": "@mikode13/tsconfig/node",
 	"compilerOptions": {
-		"noEmit": true
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"noEmit": true,
+		"paths": { "@/*": ["../src/*"] }
 	},
 	"include": ["**/*.ts", "**/*.tsx"]
 }

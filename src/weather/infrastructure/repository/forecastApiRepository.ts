@@ -1,16 +1,16 @@
 import axios from 'axios';
-import type { ForecastModel } from '../../domain/model/forecastModel.js';
-import type { GeocodingModel } from '../../domain/model/geocodingModel.js';
-import type { Point } from '../../domain/model/point.js';
-import type { ForecastRepository } from '../../domain/repository/forecastRepository.js';
+import type { ForecastModel } from '@/weather/domain/model/forecastModel';
+import type { GeocodingModel } from '@/weather/domain/model/geocodingModel';
+import type { Point } from '@/weather/domain/model/point';
+import type { ForecastRepository } from '@/weather/domain/repository/forecastRepository';
 import {
 	toDomain as forecastToDomain,
 	type ForecastDataModel,
-} from '../model/forecastDataModel.js';
+} from '@/weather/infrastructure/model/forecastDataModel';
 import {
 	toDomain as geocodeToDomain,
 	type GeocodingDataModel,
-} from '../model/geocodingDataModel.js';
+} from '@/weather/infrastructure/model/geocodingDataModel';
 
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';

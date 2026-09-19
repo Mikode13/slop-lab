@@ -408,3 +408,30 @@ passed `pnpm run check` unnoticed. `tsc -p tests/tsconfig.json --noEmit` is now 
 **Lesson.** A deviation recorded as "will close in its own pull request" can close as a side
 effect of unrelated work instead. The record should say so once it happens rather than leave
 the original entry looking still-open when it isn't.
+
+## Import from `src/` through a single `@/` alias
+
+**Decision.** `@/*` resolves to `src/*` everywhere: `vite.config.js` and `vitest.config.ts`
+declare `resolve.alias`, and `tsconfig.json` and `tests/tsconfig.json` declare `paths`. Every
+import that would leave its own folder (`../`) uses the alias; imports inside the same folder
+stay relative. No import carries a file extension, and `tests/tsconfig.json` now uses
+`module: esnext` with `moduleResolution: bundler`, like the root configuration.
+
+**Context.** Tests reached `src/` through paths like
+`../../../../../src/pokemon/infrastructure/model/pokemonDataModel.js`, which are hard to read
+and change whenever a file moves. One generic alias scales to new features without touching
+configuration, unlike one alias per feature ([issue #17](https://github.com/Mikode13/slop-lab/issues/17)).
+The `.js` suffix on every specifier existed only because `tests/tsconfig.json` inherited
+`nodenext` from the shared Node configuration, which rejects extensionless specifiers. The
+tests run under Vitest, which resolves like a bundler, so `nodenext` was checking a
+resolution model nothing executes.
+
+**Consequences.** Four files must agree, and a partial change breaks one runtime silently:
+Vitest projects do not inherit `resolve` unless they set `extends: true`, and the root
+`tsconfig.json` and `tests/tsconfig.json` need their own `paths` (the latter points at
+`../src/*`). `src/` is no longer written to be valid under `nodenext`; nothing compiles it
+that way.
+
+**Lesson.** A type-check configuration should model the resolution that actually runs the
+code. Inheriting a stricter model made every import in `src/` pay for a runtime that does not
+exist here.

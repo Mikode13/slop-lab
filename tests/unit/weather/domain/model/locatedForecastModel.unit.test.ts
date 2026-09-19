@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LocatedForecastModel } from '../../../../../src/weather/domain/model/locatedForecastModel.js';
-import { ForecastModel } from '../../../../../src/weather/domain/model/forecastModel.js';
+import { LocatedForecastModel } from '@/weather/domain/model/locatedForecastModel';
+import { ForecastModel } from '@/weather/domain/model/forecastModel';
 
 describe('LocatedForecastModel', () => {
 	it('extends a forecast with the place it was resolved for', () => {

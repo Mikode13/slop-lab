@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { PokemonDetailModel } from '../domain/model/pokemonDetailModel.js';
-import { getAllPokemonDetailsUseCase } from '../application/getAllPokemonDetailsUseCase.js';
+import type { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
+import { getAllPokemonDetailsUseCase } from '@/pokemon/application/getAllPokemonDetailsUseCase';
 
 // Colors for every Pokémon type
 const TYPE_COLORS: Record<string, string> = {

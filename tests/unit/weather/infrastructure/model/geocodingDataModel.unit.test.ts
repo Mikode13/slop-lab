@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { toDomain } from '../../../../../src/weather/infrastructure/model/geocodingDataModel.js';
-import { GeocodingModel } from '../../../../../src/weather/domain/model/geocodingModel.js';
+import { toDomain } from '@/weather/infrastructure/model/geocodingDataModel';
+import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
 
 describe('geocodingDataModel toDomain', () => {
 	it('maps an Open-Meteo geocoding result into the domain model', () => {
