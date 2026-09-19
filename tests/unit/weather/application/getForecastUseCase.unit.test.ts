@@ -1,22 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
+import { createGetForecastUseCase } from '@/weather/application/getForecastUseCase';
 import { ForecastModel } from '@/weather/domain/model/forecastModel';
-
-const getCoordinates = vi.fn();
-const getForecast = vi.fn();
-
-vi.mock('@/weather/infrastructure/repository/forecastApiRepository', () => ({
-	ForecastApiRepository: class {
-		getCoordinates = getCoordinates;
-		getForecast = getForecast;
-	},
-}));
-
-const { default: getForecastUseCase } = await import('@/weather/application/getForecastUseCase');
+import { GeocodingModel } from '@/weather/domain/model/geocodingModel';
+import type { ForecastRepository } from '@/weather/domain/repository/forecastRepository';
 
 describe('getForecastUseCase', () => {
 	it('resolves the city to coordinates and combines them with the forecast', async () => {
-		getCoordinates.mockResolvedValue(
+		const getCoordinates = vi.fn().mockResolvedValue(
 			new GeocodingModel({
 				id: 3117735,
 				name: 'Madrid',
@@ -25,7 +15,7 @@ describe('getForecastUseCase', () => {
 				longitude: -3.70256,
 			}),
 		);
-		getForecast.mockResolvedValue(
+		const getForecast = vi.fn().mockResolvedValue(
 			new ForecastModel({
 				time: '2026-09-19T00:00',
 				temperature2m: 18.4,
@@ -34,8 +24,9 @@ describe('getForecastUseCase', () => {
 				windSpeed10m: 11.2,
 			}),
 		);
+		const repository: ForecastRepository = { getCoordinates, getForecast };
 
-		const weather = await getForecastUseCase('Madrid');
+		const weather = await createGetForecastUseCase(repository)('Madrid');
 
 		expect(getCoordinates).toHaveBeenCalledWith('Madrid');
 		expect(getForecast).toHaveBeenCalledWith({ latitude: 40.4165, longitude: -3.70256 });
@@ -43,5 +34,18 @@ describe('getForecastUseCase', () => {
 		expect(weather.country).toBe('Spain');
 		expect(weather.temperature2m).toBe(18.4);
 		expect(weather.weatherCode).toBe(3);
+	});
+
+	it('does not request a forecast when the city cannot be resolved', async () => {
+		const getForecast = vi.fn();
+		const repository: ForecastRepository = {
+			getCoordinates: vi.fn().mockRejectedValue(new Error('City data not found')),
+			getForecast,
+		};
+
+		await expect(createGetForecastUseCase(repository)('Nowhere')).rejects.toThrow(
+			'City data not found',
+		);
+		expect(getForecast).not.toHaveBeenCalled();
 	});
 });

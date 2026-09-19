@@ -1,23 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createGetAllPokemonDetailsUseCase } from '@/pokemon/application/getAllPokemonDetailsUseCase';
 import { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
 import { PokemonModel } from '@/pokemon/domain/model/pokemonModel';
-
-const getAll = vi.fn();
-const getDetail = vi.fn();
-
-vi.mock('@/pokemon/infrastructure/repository/pokemonApiRepository', () => ({
-	PokemonApiRepository: class {
-		getAll = getAll;
-		getDetail = getDetail;
-	},
-}));
-
-const { getAllPokemonDetailsUseCase } =
-	await import('@/pokemon/application/getAllPokemonDetailsUseCase');
+import type { PokemonRepository } from '@/pokemon/domain/repository/pokemonRepository';
 
 describe('getAllPokemonDetailsUseCase', () => {
 	it('fetches the page and resolves every listed Pokémon to its detail', async () => {
-		getAll.mockResolvedValue({
+		const getAll = vi.fn().mockResolvedValue({
 			count: 2,
 			next: null,
 			previous: null,
@@ -26,7 +15,7 @@ describe('getAllPokemonDetailsUseCase', () => {
 				new PokemonModel({ name: 'ivysaur', url: 'https://pokeapi.co/api/v2/pokemon/2/' }),
 			],
 		});
-		getDetail.mockImplementation(async (url: string) =>
+		const getDetail = vi.fn(async (url: string) =>
 			Promise.resolve(
 				new PokemonDetailModel({
 					id: url.endsWith('1/') ? 1 : 2,
@@ -38,8 +27,9 @@ describe('getAllPokemonDetailsUseCase', () => {
 				}),
 			),
 		);
+		const repository: PokemonRepository = { getAll, getDetail };
 
-		const page = await getAllPokemonDetailsUseCase(0, 20);
+		const page = await createGetAllPokemonDetailsUseCase(repository)(0, 20);
 
 		expect(getAll).toHaveBeenCalledWith(0, 20);
 		expect(getDetail).toHaveBeenCalledTimes(2);
