@@ -500,3 +500,36 @@ with decorators and take no constructor arguments.
 **Lesson.** A helper copied from a reference project should be tested against the cases the
 reference never hit. The original passed for every model vivolt.front had and would have
 passed for ours too, yet it failed for a class with an optional callback.
+
+## Wire use cases through factories and a composition root
+
+**Decision.** Amends "Let application construct infrastructure directly until the composition
+root lands", which recorded that violation as temporary. Each use case is now built by a
+factory that takes the domain port it needs (`createGetForecastUseCase(repository)`) and returns
+the use case function. `src/compositionRoot.ts` exports `createApplication()`, the only place
+that constructs the infrastructure adapters and passes them to the factories. `main.tsx`
+builds the application once and provides it through `ApplicationProvider`; the two feature
+pages read their use case with `useApplication()`. No dependency-injection library is used
+([issue #18](https://github.com/Mikode13/slop-lab/issues/18)).
+
+**Context.** The use cases constructed their repository inline, so application imported
+infrastructure and the tests could only isolate them by mocking a module path. The options
+were a container such as `inversify`, as vivolt.front uses, or plain constructor injection.
+A container adds a table of symbols that the compiler does not check, decorators inside the
+application layer, and a dependency, to solve a wiring problem two features do not have.
+Factories are checked end to end by the type system and keep application free of any
+framework.
+
+**Consequences.** Application no longer imports infrastructure, which the architecture
+document had recorded as a known deviation. Use case tests pass a plain fake repository, so
+the `vi.mock` of an adapter module and the dynamic import that followed it are gone, and a
+new test covers that no forecast is requested when the city cannot be resolved. The context
+also gives component tests a place to inject fakes ([issue #22](https://github.com/Mikode13/slop-lab/issues/22)).
+The factory pattern makes a use case's file name differ from its exported name, which
+`docs/module-structure.md` records as the single exception to the naming rule. A container
+becomes worth revisiting if wiring by hand grows painful or per-use-case lazy loading is
+needed; that would be a new decision.
+
+**Lesson.** Dependency inversion needs a place that knows both sides, not a library. Passing
+the port as an argument achieves the inversion, and the composition root is just the function
+that does the passing.

@@ -23,15 +23,18 @@ and naming rules.
 
 ```mermaid
 flowchart LR
-    Main[main.tsx] --> App[App.tsx]
+    Main[main.tsx] --> Composition[compositionRoot.ts]
+    Main --> App[App.tsx]
+    Composition --> WeatherApp[weather/application]
+    Composition --> PokemonApp[pokemon/application]
+    Composition --> WeatherInfra[weather/infrastructure]
+    Composition --> PokemonInfra[pokemon/infrastructure]
     App --> WeatherUI[weather/ui]
     App --> PokemonUI[pokemon/ui]
-    WeatherUI --> WeatherApp[weather/application]
-    PokemonUI --> PokemonApp[pokemon/application]
+    WeatherUI --> WeatherApp
+    PokemonUI --> PokemonApp
     WeatherApp --> WeatherDomain[weather/domain]
     PokemonApp --> PokemonDomain[pokemon/domain]
-    WeatherApp -. constructs directly .-> WeatherInfra[weather/infrastructure]
-    PokemonApp -. constructs directly .-> PokemonInfra[pokemon/infrastructure]
     WeatherInfra --> WeatherDomain
     PokemonInfra --> PokemonDomain
     WeatherInfra --> Axios[axios]
@@ -40,22 +43,28 @@ flowchart LR
     Axios --> PokeAPI[PokéAPI]
 ```
 
-`main.tsx` is the browser entry point. `App.tsx` owns tab selection and renders one feature's
-UI at a time; it holds no feature logic. The dotted edges are the one boundary not yet in
-place: application constructs its infrastructure repository inline because no composition
-root exists yet (see "Intended evolution").
+`main.tsx` is the browser entry point. It calls `createApplication()` in
+`src/compositionRoot.ts`, the only place that knows both a use case and the concrete
+repository it runs on, and hands the result to the UI through `ApplicationProvider`. `App.tsx`
+owns tab selection and renders one feature's UI at a time; it holds no feature logic. UI
+components reach their use case with `useApplication()`, so they depend on the use case's
+shape and never on how it was built.
 
 ## Current responsibilities and boundaries
 
-- `main.tsx` locates the DOM root and mounts React.
+- `main.tsx` locates the DOM root, builds the application through the composition root, and
+  mounts React.
 - `App.tsx` renders application navigation and switches between the two feature panels.
 - **Domain** owns business concepts and the ports through which a feature reaches
   infrastructure, without React, Axios, or provider response types. The ports live here, not
   in application, because domain is the stable boundary a feature exposes: other features
   that eventually depend on it should point at domain, not at application, which currently
   depends on concrete infrastructure.
-- **Application** owns each feature's use cases (`getForecastUseCase`,
-  `getAllPokemonDetailsUseCase`). It is the boundary through which UI obtains domain results.
+- **Application** owns each feature's use cases. A use case is built by a factory that takes
+  the domain port it needs (`createGetForecastUseCase(repository)`), so it never constructs
+  infrastructure itself. It is the boundary through which UI obtains domain results.
+- The **composition root** (`src/compositionRoot.ts`) constructs the infrastructure adapters
+  and passes them to the use case factories.
 - **Infrastructure** contains the HTTP adapters (`ForecastApiRepository`,
   `PokemonApiRepository`), the provider response shapes, and their mapping into domain
   models. It implements the domain-owned ports.
@@ -73,11 +82,11 @@ application. Domain does not depend on React, Axios, infrastructure, or applicat
 domain communicate through application use cases rather than depending on one another
 directly.
 
-The exception is that application depends on infrastructure, because each use case
-constructs its concrete repository itself. The decision log records this as a known,
-temporary violation. Infrastructure builds its data models with `class-transformer`, which
-declares the fields it reads but does not validate their types, so external responses, failed requests, request timing, and
-cancellation can still affect UI state directly.
+Application does not depend on infrastructure: use case factories receive their repository
+as an argument, and only the composition root imports both sides. Infrastructure builds its
+data models with `class-transformer`, which declares the fields it reads but does not validate
+their types, so external responses, failed requests, request timing, and cancellation can
+still affect UI state directly.
 
 ## Important flows
 
@@ -91,18 +100,10 @@ performed in memory over the current page in `PokemonBrowser.tsx`.
 
 ## Intended evolution
 
-The four boundaries above are adopted for both features. What remains is the composition
-root:
-
-- A small **composition root** will construct the infrastructure adapters and provide them
-  to the application use cases used by the UI, removing application's direct dependency on
-  infrastructure. It is tracked in [issue #18](https://github.com/Mikode13/slop-lab/issues/18),
-  alongside the choice of a dependency-injection library.
-- Provider responses will be validated at the infrastructure boundary
-  ([issue #20](https://github.com/Mikode13/slop-lab/issues/20)).
-
-Until those land, reviewers should report the remaining coupling as known material rather
-than claim an unrelated change caused it.
+The four boundaries and the composition root are adopted for both features. What remains is
+validating provider responses at the infrastructure boundary
+([issue #20](https://github.com/Mikode13/slop-lab/issues/20)). Until it lands, reviewers should
+report the missing validation as known material rather than claim an unrelated change caused it.
 
 ## Constraints and trade-offs
 

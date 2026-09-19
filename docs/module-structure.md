@@ -17,8 +17,8 @@ user/
 │   └── repository/
 │       └── userRepository.ts     → UserRepository (the port)
 ├── application/
-│   ├── getUserUseCase.ts     → getUserUseCase
-│   └── getAllUsersUseCase.ts → getAllUsersUseCase
+│   ├── getUserUseCase.ts     → createGetUserUseCase (builds getUserUseCase)
+│   └── getAllUsersUseCase.ts → createGetAllUsersUseCase
 ├── infrastructure/
 │   ├── model/
 │   │   ├── userDetailDataModel.ts    → UserDetailDataModel
@@ -75,8 +75,18 @@ models don't take this qualifier; see the naming rule below for why.
   unchanged, it reuses that adapter's model instead of declaring a lookalike one. Two
   models that only coincidentally match today, but could change for unrelated reasons,
   stay separate even though they look identical right now.
-- **Use cases are a verb plus what they do, suffixed `UseCase`:** `getUserUseCase`,
-  `createUserUseCase`, `deleteUserUseCase`.
+- **Use cases are built by a factory that receives their ports.** A file is named for the use
+  case it builds (`getUserUseCase.ts`), a verb plus what it does, suffixed `UseCase`, and
+  exports the factory `createGetUserUseCase(repository)`, which returns the function
+  `getUserUseCase`. Application code never imports infrastructure: the use case gets its
+  repository as an argument. This is the one place the "file named after its primary export"
+  rule bends, because `createCreateUserUseCase` would name the file worse than the use case
+  it builds does. The factory is called once, in the composition root.
+- **The composition root wires everything.** `src/compositionRoot.ts` exports
+  `createApplication()`, which constructs each infrastructure adapter and every use case and
+  returns them by name. `main.tsx` calls it and provides the result through
+  `ApplicationProvider`; UI components read use cases with `useApplication()`. Tests build a
+  use case with a plain fake object and no module mocking.
 - **Subdivide a layer's folder only once it holds more than one kind of artifact.**
   `application/` holds only use case files today, in both features that exist, so it stays
   flat — a `useCase/` subfolder would separate use cases from nothing, since there is nothing

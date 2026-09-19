@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
-import { getAllPokemonDetailsUseCase } from '@/pokemon/application/getAllPokemonDetailsUseCase';
+import { useApplication } from '@/ApplicationContext';
 
 // Colors for every Pokémon type
 const TYPE_COLORS: Record<string, string> = {
@@ -25,6 +25,7 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export default function PokemonBrowser() {
+	const { getAllPokemonDetails } = useApplication();
 	const [pokemons, setPokemons] = useState<PokemonDetailModel[]>([]);
 	const [offset, setOffset] = useState(0);
 	const [total, setTotal] = useState(0);
@@ -36,7 +37,7 @@ export default function PokemonBrowser() {
 		const load = async () => {
 			setLoading(true);
 			try {
-				const list = await getAllPokemonDetailsUseCase(offset, 20);
+				const list = await getAllPokemonDetails(offset, 20);
 				setTotal(list.count);
 				setPokemons(list.results);
 			} catch (error) {
@@ -46,7 +47,7 @@ export default function PokemonBrowser() {
 		};
 
 		void load();
-	}, [offset]);
+	}, [offset, getAllPokemonDetails]);
 
 	const visible = pokemons.filter(p => p.name.includes(filter.toLowerCase()));
 

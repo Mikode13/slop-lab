@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import getForecastUseCase from '@/weather/application/getForecastUseCase';
+import { useApplication } from '@/ApplicationContext';
 
 // Helper to turn a WMO weather code into an emoji
 function getWeatherEmoji(code: number): string {
@@ -112,6 +112,7 @@ const DEFAULT_VALUES = {
 };
 
 export default function WeatherPage() {
+	const { getForecast } = useApplication();
 	const [city, setCity] = useState(DEFAULT_VALUES.city);
 	const [country, setCountry] = useState(DEFAULT_VALUES.country);
 	const [placeName, setPlaceName] = useState(DEFAULT_VALUES.placeName);
@@ -137,7 +138,7 @@ export default function WeatherPage() {
 			setLoading(true);
 
 			try {
-				const weather = await getForecastUseCase(city);
+				const weather = await getForecast(city);
 
 				setTemperature(weather.temperature2m);
 				setCountry(weather.country);
@@ -152,7 +153,7 @@ export default function WeatherPage() {
 		};
 
 		void search();
-	}, [city]);
+	}, [city, getForecast]);
 
 	return (
 		<div
