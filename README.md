@@ -50,24 +50,22 @@ so a network connection is the only external requirement.
 
 ## Commands
 
-| Command                   | Purpose                                                             |
-| ------------------------- | ------------------------------------------------------------------- |
-| `pnpm dev`                | Start the Vite development server                                   |
-| `pnpm build`              | Produce the production build in `dist/`                             |
-| `pnpm preview`            | Serve the production build locally                                  |
-| `pnpm run check`          | Formatting, linting, type checking, and the AI review pilot's tests |
-| `pnpm test`               | The unit suite under `tests/unit/`                                  |
-| `pnpm run test:ai-review` | Only the AI review pilot's tests                                    |
-| `pnpm run format`         | Rewrite files with Prettier                                         |
-| `pnpm run lint:fix`       | Apply the ESLint fixes that can be applied safely                   |
+| Command             | Purpose                                           |
+| ------------------- | ------------------------------------------------- |
+| `pnpm dev`          | Start the Vite development server                 |
+| `pnpm build`        | Produce the production build in `dist/`           |
+| `pnpm preview`      | Serve the production build locally                |
+| `pnpm run check`    | Formatting, linting, and type checking            |
+| `pnpm test`         | The unit suite under `tests/unit/`                |
+| `pnpm run format`   | Rewrite files with Prettier                       |
+| `pnpm run lint:fix` | Apply the ESLint fixes that can be applied safely |
 
 `pnpm run check` and `pnpm test` are what CI and the `pre-push` hook both run, as separate
-steps. The AI review pilot's tests cover its temporary tooling, not the application.
+steps.
 
-The repository also hosts a temporary
-[AI review pilot](docs/ai-review-pilot.md). It is evaluated separately from deterministic
-CI and will become a thin caller after the workflow is proven and promoted to
-`Mikode13/.github`.
+Pull requests are also reviewed by the reusable AI reviewer in `Mikode13/.github`, through a
+thin caller that runs a newer revision than other repositories, as a canary. It is evaluated
+separately from deterministic CI; see the [AI review record](docs/ai-review-pilot.md).
 
 ## External APIs
 

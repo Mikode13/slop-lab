@@ -100,7 +100,9 @@ it. A result that cannot be validated, is bound to another commit, or never arri
 check and blocks the merge through unresolved conversations instead. (Superseded: since "Hold
 the merge only for blockers and recheck earlier findings", a `BLOCKER` fails the check.)
 Promotion must preserve that behavior, add the reusable contract and fixtures the central repository requires, and
-delete the local implementation rather than let two reviewers drift.
+delete the local implementation rather than let two reviewers drift. (Amended: "slop-lab calls the
+central AI reviewer as a canary" records the move; the local implementation is gone and this
+repository keeps a thin caller.)
 
 **Lesson.** A central workflow is cheaper to trust when its provider and publication
 boundaries have first been exercised by the canary that will consume it.
@@ -161,7 +163,8 @@ passing them. An exceptional merge past an
 `incomplete` review goes through a pull-request-only bypass, which the standard allows with a
 recorded reason, instead of an edit to the ruleset. (Since "Hold the merge only for blockers
 and recheck earlier findings", the same bypass covers `blocked`, and only organization owners
-hold it.)
+hold it. Since "slop-lab calls the central AI reviewer as a canary", the reviewer travels with
+the pinned workflow, so a base revision without one no longer occurs.)
 
 **Lesson.** On a required check, skipped means passed. A condition that skips a gate opens it,
 so every path that cannot produce a review has to fail.
@@ -170,7 +173,10 @@ so every path that cannot produce a review has to fail.
 
 **Decision.** The review runs through `pull_request_target`, from `main`, and the provider
 token lives in an `ai-review` environment that only a run from `main` can read. The check stays
-unrequired until promotion, when a ruleset requires the central workflow at a pinned commit.
+unrequired until promotion, when a ruleset requires the central workflow at a pinned commit. (Amended: promotion arrived as a
+pinned caller, and the check is still unrequired and matched by name. Requiring it waits for a
+ruleset that requires the pinned workflow or a dedicated GitHub App; see "slop-lab calls the
+central AI reviewer as a canary".)
 No GitHub App is created for the pilot. Until promotion the pilot runs only on branches pushed
 by trusted maintainers and their agents, with the remaining risk accepted explicitly on the
 bootstrap pull request.
@@ -543,3 +549,25 @@ adapter.
 **Lesson.** Dependency inversion needs a place that knows both sides, not a library. Passing
 the port as an argument achieves the inversion, and the composition root is just the function
 that does the passing.
+
+## slop-lab calls the central AI reviewer as a canary
+
+**Decision.** The reviewer's workflow, scripts, and tests leave this repository. This amends
+"Pilot automated review locally before centralizing it", "Fail the review gate instead of
+skipping it", and "Put the token and the check out of a branch's reach before the gate is required", which describe a local reviewer and a base revision that can lack one. A thin caller
+runs `Mikode13/.github`'s reusable `ai-review.yml` at a full commit SHA, and slop-lab moves to a
+newer SHA before other repositories do.
+
+**Context.** The pilot was meant to end here: the reviewer was proven on real pull requests, and
+each defect it exposed was fixed in a pull request the pilot itself reviewed. Live runs, the
+layered-architecture migration among them, stopped exposing pipeline defects, so the
+maintainer promoted it in Mikode13/.github#15.
+
+**Consequences.** A reviewer change is a reviewed pull request in `Mikode13/.github`, then a new
+SHA here, then the same in other repositories. The previous SHA is the rollback. The scripts'
+tests no longer run in `pnpm run check`, which also removes a test runner from a command the
+testing standard keeps free of them. The token stays in this repository's `ai-review`
+environment, and whether the reusable workflow reads it is what the first pull request through
+the caller shows.
+
+**Lesson.** Pilot where every defect is cheap and reviewed, then centralize once the defects stop.
