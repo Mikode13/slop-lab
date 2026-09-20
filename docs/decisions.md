@@ -100,7 +100,9 @@ it. A result that cannot be validated, is bound to another commit, or never arri
 check and blocks the merge through unresolved conversations instead. (Superseded: since "Hold
 the merge only for blockers and recheck earlier findings", a `BLOCKER` fails the check.)
 Promotion must preserve that behavior, add the reusable contract and fixtures the central repository requires, and
-delete the local implementation rather than let two reviewers drift.
+delete the local implementation rather than let two reviewers drift. (Amended: "slop-lab calls the
+central AI reviewer as a canary" records the move; the local implementation is gone and this
+repository keeps a thin caller.)
 
 **Lesson.** A central workflow is cheaper to trust when its provider and publication
 boundaries have first been exercised by the canary that will consume it.
@@ -161,7 +163,8 @@ passing them. An exceptional merge past an
 `incomplete` review goes through a pull-request-only bypass, which the standard allows with a
 recorded reason, instead of an edit to the ruleset. (Since "Hold the merge only for blockers
 and recheck earlier findings", the same bypass covers `blocked`, and only organization owners
-hold it.)
+hold it. Since "slop-lab calls the central AI reviewer as a canary", the reviewer travels with
+the pinned workflow, so a base revision without one no longer occurs.)
 
 **Lesson.** On a required check, skipped means passed. A condition that skips a gate opens it,
 so every path that cannot produce a review has to fail.
@@ -546,7 +549,9 @@ that does the passing.
 
 ## slop-lab calls the central AI reviewer as a canary
 
-**Decision.** The reviewer's workflow, scripts, and tests leave this repository. A thin caller
+**Decision.** The reviewer's workflow, scripts, and tests leave this repository. This amends
+"Pilot automated review locally before centralizing it" and "Fail the review gate instead of
+skipping it", which describe a local reviewer and a base revision that can lack one. A thin caller
 runs `Mikode13/.github`'s reusable `ai-review.yml` at a full commit SHA, and slop-lab moves to a
 newer SHA before other repositories do.
 
