@@ -7,17 +7,22 @@ pipeline defects. This repository keeps a thin caller pinned to a full commit SH
 newer revision than other repositories, as a canary.
 
 The reviewer's behaviour, frozen configuration, and limitations are documented with the
-workflow, in [AI review behaviour](https://github.com/Mikode13/.github/blob/main/docs/ai-review.md), and change with it. This document keeps only what
+workflow, in [AI review behaviour](https://github.com/Mikode13/.github/blob/main/docs/ai-review.md), and change with it. Those links point to the other repository's current revision, which this
+repository may not run yet: the caller pins one commit. This document keeps only what
 belongs to slop-lab: the credential, the pilot cases, how the reviewer was promoted, how the
 gate is enforced here, and the risk accepted while it is not required.
 
 ## Enforcement
 
-`AI Review / required` is reported but not required. A ruleset can require it by name, the way
-`required-ci` requires `CI / required`, and the standard makes the review blocking as soon as
-that is done. The status is matched by name, so the weakness in
-[Accepted temporary risk](#accepted-temporary-risk) applies until a required workflow from a
-fixed repository and revision replaces it, which is a separate decision.
+`AI Review / required` is reported but not required, and it stays that way until it comes
+from a source a branch cannot act as: a ruleset that requires the pinned workflow, or a
+dedicated GitHub App. The
+[standard](https://github.com/Mikode13/engineering/blob/main/standards/automated-pull-request-review.md)
+forbids requiring a status that any workflow a branch adds could report, and it grants this
+repository its name-matched status only while the check is unrequired, as
+[Accepted temporary risk](#accepted-temporary-risk) says. Do not require it by name, and do not
+add it to the shared `required-ci` ruleset, which covers repositories that do not run the
+reviewer.
 
 GitHub reports a job skipped by its condition as successful, and a skipped required check does
 not block a merge. The workflow therefore never skips its way past the gate:

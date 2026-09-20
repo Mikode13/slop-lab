@@ -173,7 +173,10 @@ so every path that cannot produce a review has to fail.
 
 **Decision.** The review runs through `pull_request_target`, from `main`, and the provider
 token lives in an `ai-review` environment that only a run from `main` can read. The check stays
-unrequired until promotion, when a ruleset requires the central workflow at a pinned commit.
+unrequired until promotion, when a ruleset requires the central workflow at a pinned commit. (Amended: promotion arrived as a
+pinned caller, and the check is still unrequired and matched by name. Requiring it waits for a
+ruleset that requires the pinned workflow or a dedicated GitHub App; see "slop-lab calls the
+central AI reviewer as a canary".)
 No GitHub App is created for the pilot. Until promotion the pilot runs only on branches pushed
 by trusted maintainers and their agents, with the remaining risk accepted explicitly on the
 bootstrap pull request.
@@ -550,8 +553,8 @@ that does the passing.
 ## slop-lab calls the central AI reviewer as a canary
 
 **Decision.** The reviewer's workflow, scripts, and tests leave this repository. This amends
-"Pilot automated review locally before centralizing it" and "Fail the review gate instead of
-skipping it", which describe a local reviewer and a base revision that can lack one. A thin caller
+"Pilot automated review locally before centralizing it", "Fail the review gate instead of
+skipping it", and "Put the token and the check out of a branch's reach before the gate is required", which describe a local reviewer and a base revision that can lack one. A thin caller
 runs `Mikode13/.github`'s reusable `ai-review.yml` at a full commit SHA, and slop-lab moves to a
 newer SHA before other repositories do.
 
