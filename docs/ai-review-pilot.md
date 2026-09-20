@@ -60,11 +60,14 @@ token and no provider credential.
 
 ## Pilot cases
 
-The change that was reserved as the first case,
-[pull request 1](https://github.com/Mikode13/slop-lab/pull/1), merged before the reviewer
-existed, so the first end-to-end case has to be a new one. It should exercise the same property
-that one would have: a change whose known `src/` defects are pre-existing, so the expected
-result is `clean` with those defects listed for triage.
+The change reserved as the first case, [pull request 1](https://github.com/Mikode13/slop-lab/pull/1),
+merged before the reviewer existed. The first end-to-end case was a new one,
+[pull request 16](https://github.com/Mikode13/slop-lab/pull/16), run blind: its expected findings
+are kept outside this repository, because a reviewer that can read them measures retrieval
+instead of review. The layered-architecture migration,
+[pull request 21](https://github.com/Mikode13/slop-lab/pull/21), was not blind and gives no recall
+score, but it showed the reviewer keeping known `src/` defects out of the blocking findings and
+converging across pushes.
 
 The mechanical cases below do not need the provider: the reviewer's tests in `Mikode13/.github`
 replace `harness-cli` with a command that returns a prepared reply, which is how the failure
