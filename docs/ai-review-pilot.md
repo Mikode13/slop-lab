@@ -1,15 +1,19 @@
 # AI review pilot
 
-slop-lab temporarily owns an executable AI review workflow so that the review contract can be
-tested on real pull requests before it becomes a reusable workflow in `Mikode13/.github`. This
-is a bounded pilot, not a project-specific replacement for the central workflow that the
+slop-lab piloted the AI review that
+[Mikode13/.github](https://github.com/Mikode13/.github) now provides as a reusable workflow. The
+pilot ran in this repository, on its own pull requests, until live runs stopped exposing
+pipeline defects. The reviewer's code, its frozen configuration, and its tests now live in
+`Mikode13/.github`; this repository keeps a thin caller pinned to a full commit SHA and runs
+a newer revision than other repositories, as a canary. This document records how the reviewer
+behaves, the cases used to evaluate it, and how it was promoted. It describes the
 [automated pull request review standard](https://github.com/Mikode13/engineering/blob/main/standards/automated-pull-request-review.md)
-requires.
+in practice, not a replacement for it.
 
 ## Frozen configuration
 
-A pilot that changes while it is measured proves nothing, so these are fixed for its duration
-and recorded in [the workflow](../.github/workflows/ai-review.yml):
+A reviewer that changes while it is measured proves nothing, so these are fixed in each
+revision of [the reusable workflow](https://github.com/Mikode13/.github/blob/main/.github/workflows/ai-review.yml). A change is a reviewed pull request there:
 
 | Choice           | Value                                                                                         |
 | ---------------- | --------------------------------------------------------------------------------------------- |
@@ -21,6 +25,7 @@ and recorded in [the workflow](../.github/workflows/ai-review.yml):
 | Repair attempts  | At most one additional turn to recover a reply that failed contract validation                |
 | Evidence budget  | 1,250,000 bytes of prompt, about 500,000 tokens, filled in priority order and never truncated |
 | Cost ceiling     | The EUR 30 per month the standard allows for the whole provider account                       |
+| Policy           | The standards of `Mikode13/engineering` at the commit the workflow pins                       |
 
 Since [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41), the standard
 describes `harness-cli` and the merge rules this pilot follows. ADR 0017 needed no change: it
@@ -48,14 +53,13 @@ The work is split across jobs that do not share credentials:
 `Analyze` checks out the pull request head without persisted Git credentials and reads it as
 data: nothing from it runs, and the reviewer starts in a separate work directory. The
 reviewer's progress output, which the pull request can influence, is printed with workflow
-commands switched off. The reviewer's own scripts, the repository instructions, the
-architecture document, and the decision log are all read from the base revision, so a pull
-request cannot rewrite the reviewer that is about to judge it. The base revision is the commit
-of `main` the workflow itself was read from, not the base commit recorded in the pull request,
-which can be older: a pull request opened before a change to the pilot would otherwise run the
-new workflow with the old scripts. The reviewed diff starts where the pull request diverges
+commands switched off. The reviewer's own scripts come from the commit of `Mikode13/.github` that defines the
+running workflow, and the repository instructions, the architecture document, and the decision
+log are read from the base revision, so a pull request cannot rewrite the reviewer that is
+about to judge it. The base revision is the commit of `main` the caller was read from, not the
+base commit recorded in the pull request, which can be older. The reviewed diff starts where the pull request diverges
 from it. The review skill comes from the pinned skills revision and applicable standards from
-the current `Mikode13/engineering` main, whose commit is recorded in the review input.
+the pinned `Mikode13/engineering` commit, which is recorded in the review input.
 
 `Publish` re-runs the full contract validation on the result it receives before it acts on it,
 and neutralizes mentions, HTML, and comment markers in every string it renders. Under
@@ -204,68 +208,18 @@ any other reviewed content.
 
 ## Enforcement
 
-During the pilot, `AI Review / required` is reported but not required. Requiring it needs a
-result that no branch can produce, and without a GitHub App the way to get one is the ruleset
-rule "Require workflows to pass before merging", which requires a workflow from a fixed
-repository and revision. That rule cannot require a workflow in the repository that holds it,
-so it arrives with promotion. A GitHub App would close the gap sooner, but promotion would
-remove it again. The
-[automated pull request review standard](https://github.com/Mikode13/engineering/blob/main/standards/automated-pull-request-review.md)
-makes the pilot blocking as soon as the check can be required, so the order is:
-
-1. Merge the bootstrap pull request on `CI / required` and human review. GitHub runs
-   `pull_request_target` workflows as they are on `main`, and `main` does not carry this one
-   yet, so the bootstrap pull request gets no review at all.
-2. Create the `ai-review` environment and move the token into it, as
-   [Credential setup](#credential-setup) describes.
-3. Run the first end-to-end case and the remaining pilot cases, with the status reported but
-   not required.
-4. Align the standard with the pilot, which
-   [Mikode13/engineering#41](https://github.com/Mikode13/engineering/pull/41) did.
-5. Promote, and create the review ruleset in the same change.
-
-The review ruleset:
-
-| Setting                 | Value                                                                                                                 |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Target                  | The adopting repositories, default branch                                                                             |
-| Rule                    | Require workflows to pass before merging: `Mikode13/.github`, `.github/workflows/ai-review.yml`, at a full commit SHA |
-| Bypass                  | Organization administrators, for pull requests only                                                                   |
-| Conversation resolution | Already required by the `main-baseline` ruleset                                                                       |
-
-Do not add it to `required-ci`. That organization ruleset is shared with repositories that do
-not run the reviewer, and every pull request there would wait for a review that never comes. A
-separate organization ruleset whose target grows as repositories adopt the reviewer follows
-the way `required-ci` grows with CI adoption.
-
-The bypass exists because the standard lets an organization owner merge past a `blocked` or
-`incomplete` review for an exceptional need, recording the reason, the reviewed head commit,
-and the person accepting the risk in the pull request. A ruleset bypass cannot tell why the
-check failed, so only organization administrators hold it, and only for pull requests, which
-keeps each exception a decision about one merge. Without it, the only way past a provider
-outage is to edit the ruleset, which turns the gate off for every other pull request at the
-same time. It also
-covers the first run of the required workflow, which only the rule itself starts: the
-[continuous integration standard](https://github.com/Mikode13/engineering/blob/main/standards/continuous-integration.md)
-forbids requiring a check before it has reported, and here the rule is what makes it report.
+`AI Review / required` is reported but not required. A ruleset can require it by name, the way
+`required-ci` requires `CI / required`, and the standard makes the review blocking as soon as
+that is done. The status is matched by name, so the weakness in
+[Accepted temporary risk](#accepted-temporary-risk) applies until a required workflow from a
+fixed repository and revision replaces it, which is a separate decision.
 
 GitHub reports a job skipped by its condition as successful, and a skipped required check does
 not block a merge. The workflow therefore never skips its way past the gate:
 
-- a base revision without the reviewer or the publisher reports a failing status, so removing
-  the reviewer from `main` fails later reviews instead of quietly passing them;
 - a pull request from a fork reports a failing status, because it cannot be reviewed; and
 - only a draft gets no status, because a draft cannot merge and marking it ready starts a new
   review.
-
-A workflow that a ruleset requires behaves differently in two ways the promoted version must
-handle. GitHub runs it only for the default activity types, `opened`, `synchronize`, and
-`reopened`, so marking a draft ready does not start it again, and it must fail for a draft
-instead of skipping it. Re-running a run repeats the draft event, so it must read the draft
-state from the API; a re-run after the pull request leaves draft, started by a trusted
-`ready_for_review` workflow or by a maintainer, then reviews the head without a new commit.
-And it must not use `cancel-in-progress`, so a superseded run has to stop itself instead of
-being cancelled.
 
 ## Credential setup
 
@@ -322,11 +276,10 @@ without spending quota or waiting on a real run.
 | Provider failure or exhausted quota                   | `incomplete`                                    |
 | Passing test that does not prove the behaviour        | `concerns`                                      |
 
-The rules that decide merge authority without the provider also have focused tests in
-[`.github/ai-review/tests`](../.github/ai-review/tests). `pnpm run check` runs them through
-`pnpm run test:ai-review`, so `CI / required` fails when one of them does. They use the
-Node.js test runner rather than Vitest, because they test temporary pilot tooling and must not
-stand in for the test suite that `src/` still lacks by design.
+The rules that decide merge authority without the provider have focused tests in
+[`ai-review/tests`](https://github.com/Mikode13/.github/tree/main/ai-review/tests) of
+`Mikode13/.github`, which run in its `pnpm test`. They use the Node.js test runner, and
+this repository no longer carries them.
 
 [Mikode13/engineering#28](https://github.com/Mikode13/engineering/issues/28) also asks for
 fixed passes to be compared against risk-routed depth on the same cases. `REVIEW_MODEL` and
@@ -337,32 +290,19 @@ reviewer can read while that case runs.
 
 ## Promotion and rollback
 
-Promote only after roughly ten to twelve controlled executions show:
+The reviewer moved to `Mikode13/.github` in
+[Mikode13/.github#15](https://github.com/Mikode13/.github/pull/15), as a reusable workflow that
+a caller pins by full commit SHA. The criteria the pilot set were judged by the maintainer on
+live runs: the layered-architecture migration in
+[pull request 21](https://github.com/Mikode13/slop-lab/pull/21) converged across its pushes
+with no pipeline defect, and later pull requests ran the same way. The workflow, the runner,
+the contract validator, the publisher, and their tests moved, and this repository's copy was
+removed in the pull request that added the caller.
 
-- every seeded blocker detected, and no blocking finding on a change known to be correct;
-- no result attributed to the wrong commit;
-- no execution of head code or head configuration, and no secret in a log, prompt, or artifact;
-- the correct check and merge effect for every outcome;
-- no finding reported twice, and no earlier finding lost, across the commits of a pull request;
-- accidental `incomplete` at or below one execution in ten, excluding the cases that force a
-  failure;
-- a projected monthly cost within the EUR 30 ceiling; and
-- a measurable difference between candidates raised and findings confirmed after verification.
-
-Promotion moves the workflow, the runner, the contract validator, the publisher, and fixtures
-to `Mikode13/.github`, the home
-[Mikode13/engineering#27](https://github.com/Mikode13/engineering/issues/27) tracks, and the
-review ruleset then requires that workflow at a full commit SHA. This repository keeps no
-caller, because the ruleset runs the workflow, and a pull request here removes the local
-implementation. The same cases are repeated to confirm the results do not change. From then on
-a reviewer update is a reviewed pull request in `Mikode13/.github` followed by a change of the
-SHA the ruleset pins, and the previous SHA is the rollback target.
-
-Until then, rollback means removing the pilot workflow and the `ai-review` environment. The
-pre-pilot revision is
-[`db58dfd`](https://github.com/Mikode13/slop-lab/commit/db58dfd9eef6855548f0fee2be3d8a30b6907c3a).
-Nothing requires `AI Review / required` during the pilot, so removing the workflow leaves no
-check waiting.
+This repository is the canary: it moves to a newer SHA first, and other repositories move
+their pin only after it has reviewed real pull requests. Rolling back is moving the caller's
+pin to the previous SHA. To stop reviewing, remove the caller and the `ai-review` environment;
+nothing requires `AI Review / required` yet, so no check waits.
 
 ## Accepted temporary risk
 
@@ -379,8 +319,8 @@ The pilot accepts that only while all of these hold:
 - only trusted maintainers and their agents push branches to this repository; and
 - `AI Review / required` is not required.
 
-Promotion closes it, because a workflow that a ruleset requires from a fixed repository and
-revision is something no branch can produce. A push ruleset that stopped branches from
+Promotion does not close it. Only a workflow that a ruleset requires from a fixed repository
+and revision is something no branch can produce. A push ruleset that stopped branches from
 changing workflows would close it sooner, but GitHub offers push rulesets only to private and
 internal repositories, and this one is public.
 

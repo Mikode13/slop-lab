@@ -24,12 +24,11 @@
 		"lint": "eslint . --max-warnings 0",
 		"lint:fix": "eslint . --fix",
 		"typecheck": "tsc --noEmit && tsc -p tests/tsconfig.json --noEmit",
-		"check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:ai-review",
+		"check": "pnpm run format:check && pnpm run lint && pnpm run typecheck",
 		"test": "pnpm run test:unit",
 		"test:unit": "vitest run --project unit",
 		"test:unit:watch": "vitest --project unit",
-		"test:coverage": "vitest run --project unit --coverage",
-		"test:ai-review": "node --test \".github/ai-review/tests/*.test.mjs\""
+		"test:coverage": "vitest run --project unit --coverage"
 	},
 	"dependencies": {
 		"axios": "^1.20.0",

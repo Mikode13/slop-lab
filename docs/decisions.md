@@ -543,3 +543,23 @@ adapter.
 **Lesson.** Dependency inversion needs a place that knows both sides, not a library. Passing
 the port as an argument achieves the inversion, and the composition root is just the function
 that does the passing.
+
+## slop-lab calls the central AI reviewer as a canary
+
+**Decision.** The reviewer's workflow, scripts, and tests leave this repository. A thin caller
+runs `Mikode13/.github`'s reusable `ai-review.yml` at a full commit SHA, and slop-lab moves to a
+newer SHA before other repositories do.
+
+**Context.** The pilot was meant to end here: the reviewer was proven on real pull requests, and
+each defect it exposed was fixed in a pull request the pilot itself reviewed. Live runs, the
+layered-architecture migration among them, stopped exposing pipeline defects, so the
+maintainer promoted it in Mikode13/.github#15.
+
+**Consequences.** A reviewer change is a reviewed pull request in `Mikode13/.github`, then a new
+SHA here, then the same in other repositories. The previous SHA is the rollback. The scripts'
+tests no longer run in `pnpm run check`, which also removes a test runner from a command the
+testing standard keeps free of them. The token stays in this repository's `ai-review`
+environment, and whether the reusable workflow reads it is what the first pull request through
+the caller shows.
+
+**Lesson.** Pilot where every defect is cheap and reviewed, then centralize once the defects stop.
