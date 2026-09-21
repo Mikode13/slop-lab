@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
+import { PokemonApiRepository } from '@/pokemon/infrastructure/repository/pokemonApiRepository';
 import type { PokemonDetailModel } from '@/pokemon/domain/model/pokemonDetailModel';
-import { useApplication } from '@/ApplicationProvider';
+
+const PAGE_SIZE = 20;
+const pokemonRepository = new PokemonApiRepository();
 
 // Colors for every Pokémon type
 const TYPE_COLORS: Record<string, string> = {
@@ -25,7 +28,6 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 export default function PokemonBrowser() {
-	const { getAllPokemonDetails } = useApplication();
 	const [pokemons, setPokemons] = useState<PokemonDetailModel[]>([]);
 	const [offset, setOffset] = useState(0);
 	const [total, setTotal] = useState(0);
@@ -37,9 +39,12 @@ export default function PokemonBrowser() {
 		const load = async () => {
 			setLoading(true);
 			try {
-				const list = await getAllPokemonDetails(offset, 20);
-				setTotal(list.count);
-				setPokemons(list.results);
+				const page = await pokemonRepository.getAll(offset, PAGE_SIZE);
+				const details = await Promise.all(
+					page.results.map(async pokemon => pokemonRepository.getDetail(pokemon.url)),
+				);
+				setTotal(page.count);
+				setPokemons(details);
 			} catch (error) {
 				console.error('Something went wrong', error);
 			}
@@ -47,9 +52,11 @@ export default function PokemonBrowser() {
 		};
 
 		void load();
-	}, [offset, getAllPokemonDetails]);
+	}, [offset]);
 
 	const visible = pokemons.filter(p => p.name.includes(filter.toLowerCase()));
+	const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
 	return (
 		<div
@@ -84,20 +91,20 @@ export default function PokemonBrowser() {
 					type="button"
 					disabled={offset === 0}
 					onClick={() => {
-						setOffset(offset - 20);
+						setOffset(offset - PAGE_SIZE);
 					}}
 					style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #ccc' }}
 				>
 					Previous
 				</button>
 				<span style={{ color: '#666' }}>
-					Page {offset / 20 + 1} of {Math.ceil(total / 20)}
+					Page {currentPage} of {totalPages}
 				</span>
 				<button
 					type="button"
-					disabled={offset + 20 >= total}
+					disabled={offset + PAGE_SIZE >= total}
 					onClick={() => {
-						setOffset(offset + 20);
+						setOffset(offset + PAGE_SIZE);
 					}}
 					style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #ccc' }}
 				>
