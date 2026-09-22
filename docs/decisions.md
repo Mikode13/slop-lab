@@ -571,3 +571,18 @@ environment, and whether the reusable workflow reads it is what the first pull r
 the caller shows.
 
 **Lesson.** Pilot where every defect is cheap and reviewed, then centralize once the defects stop.
+
+## Run reviewer actions in protected caller jobs
+
+**Decision.** Amend "slop-lab calls the central AI reviewer as a canary": split
+the caller into read-only analysis using `ai-review` and write-only publication,
+both calling central actions at one SHA.
+
+**Context.** The reusable job received an empty environment secret
+(`Not logged in`); the local pilot authenticated.
+
+**Consequences.** `pull_request_target` loads the caller from `main`, the only
+branch allowed into `ai-review`. PR files remain data. Missing credentials
+fail as `incomplete`. A canary must prove authentication before promotion.
+
+**Lesson.** Own the protected job where its environment lives.

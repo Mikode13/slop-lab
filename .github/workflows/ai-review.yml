@@ -1,8 +1,7 @@
 name: AI Review
 
-# Canary caller of the reusable reviewer in Mikode13/.github. slop-lab runs a newer revision than
-# the other repositories, so a reviewer change is proven here on real pull requests before they
-# move their pin. The pin is a full commit SHA; rolling back is moving it to the previous one.
+# Canary caller of the reviewer actions in Mikode13/.github. Both actions run at the same
+# reviewed commit SHA; rolling back means moving both pins to the previous revision.
 #
 # pull_request_target runs this file as it is on main, never as the pull request defines it, and
 # only a run from main can read the ai-review environment that holds the provider token.
@@ -23,12 +22,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ai-review:
-    name: AI Review
+  analyze:
+    name: Analyze
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment: ai-review
     permissions:
       checks: read
       contents: read
       issues: read
+      pull-requests: read
+    outputs:
+      report: ${{ steps.review.outputs.report }}
+    steps:
+      - name: Analyze the pull request
+        id: review
+        uses: Mikode13/.github/ai-review/analyze@c38eadb8b977d298229e249668487222f48c8fff
+        with:
+          provider_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  publish:
+    name: Publish
+    needs: analyze
+    if: always() && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
       pull-requests: write
       statuses: write
-    uses: Mikode13/.github/.github/workflows/ai-review.yml@b01042a6dfed2c4f8781a387395c6fdd467f17b1
+    steps:
+      - name: Publish the result
+        uses: Mikode13/.github/ai-review/publish@c38eadb8b977d298229e249668487222f48c8fff
+        with:
+          analyze_result: ${{ needs.analyze.result }}
+          report: ${{ needs.analyze.outputs.report }}

@@ -1,7 +1,7 @@
 # AI review pilot
 
 slop-lab piloted the AI review that
-[Mikode13/.github](https://github.com/Mikode13/.github) now provides as a reusable workflow. The
+[Mikode13/.github](https://github.com/Mikode13/.github) now provides as pinned actions. The
 pilot ran here, on this repository's own pull requests, until live runs stopped exposing
 pipeline defects. This repository keeps a thin caller pinned to a full commit SHA and runs a
 newer revision than other repositories, as a canary.
@@ -96,7 +96,7 @@ this repository no longer carries them.
 
 [Mikode13/engineering#28](https://github.com/Mikode13/engineering/issues/28) also asks for
 fixed passes to be compared against risk-routed depth on the same cases. The model and effort
-are settings of the reusable workflow, so that comparison is a change there, adopted here as a
+are settings of the central analysis action, so that comparison is a change there, adopted here as a
 new pinned SHA.
 
 The expected findings and scoring notes for each case must stay outside every source the
@@ -105,8 +105,10 @@ reviewer can read while that case runs.
 ## Promotion and rollback
 
 The reviewer moved to `Mikode13/.github` in
-[Mikode13/.github#15](https://github.com/Mikode13/.github/pull/15), as a reusable workflow that
-a caller pins by full commit SHA. The criteria the pilot set were judged by the maintainer on
+[Mikode13/.github#15](https://github.com/Mikode13/.github/pull/15), initially as a reusable
+workflow. The caller now pins its analysis and publication actions to the same full commit
+SHA so the analysis job can read this repository's protected environment secret. The criteria
+the pilot set were judged by the maintainer on
 live runs: the layered-architecture migration in
 [pull request 21](https://github.com/Mikode13/slop-lab/pull/21) converged across its pushes
 with no pipeline defect, and later pull requests ran the same way. The workflow, the runner,
@@ -114,8 +116,8 @@ the contract validator, the publisher, and their tests moved, and this repositor
 removed in the pull request that added the caller.
 
 This repository is the canary: it moves to a newer SHA first, and other repositories move
-their pin only after it has reviewed real pull requests. Rolling back is moving the caller's
-pin to the previous SHA. To stop reviewing, remove the caller and the `ai-review` environment;
+their pins only after it has reviewed real pull requests. Rolling back is moving both action
+pins to the previous SHA. To stop reviewing, remove the caller and the `ai-review` environment;
 nothing requires `AI Review / required` yet, so no check waits.
 
 ## Accepted temporary risk
