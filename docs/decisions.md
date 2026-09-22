@@ -572,25 +572,17 @@ the caller shows.
 
 **Lesson.** Pilot where every defect is cheap and reviewed, then centralize once the defects stop.
 
-## Run central review actions from this repository's protected jobs
+## Run reviewer actions in protected caller jobs
 
-**Decision.** Amend "slop-lab calls the central AI reviewer as a canary": the caller now has
-two local jobs, pinned to the same reviewed commit of `Mikode13/.github`. The read-only
-analysis job declares this repository's `ai-review` environment and calls the central
-analysis action with its credential. A separate publication job calls the central publication
-action with write permissions and without the provider credential.
+**Decision.** Amend "slop-lab calls the central AI reviewer as a canary": split
+the caller into read-only analysis using `ai-review` and write-only publication,
+both calling central actions at one SHA.
 
-**Context.** The first canary run through the reusable workflow produced `Not logged in`:
-the secret was present in this repository's protected environment, but the called analysis
-job received an empty value. The earlier local pilot used the same secret successfully.
+**Context.** The reusable job received an empty environment secret
+(`Not logged in`); the local pilot authenticated.
 
-**Consequences.** `pull_request_target` still loads the caller from `main`, and only runs
-from `main` can enter the protected environment. The pull request's files are read as
-evidence, never executed. The central actions and reviewer scripts are still reviewed and
-pinned by immutable SHA; all consumers must move both pins together. An unavailable
-credential yields an explicit incomplete review and a failing status. No repository or
-organization secret is needed. The next real canary run must confirm that the provider
-authenticates through the local job before other repositories adopt this pattern.
+**Consequences.** `pull_request_target` loads the caller from `main`, the only
+branch allowed into `ai-review`. PR files remain data. Missing credentials
+fail as `incomplete`. A canary must prove authentication before promotion.
 
-**Lesson.** The repository that owns the protected secret should also own the job that
-declares its environment, while central executable code stays pinned and shared.
+**Lesson.** Own the protected job where its environment lives.
